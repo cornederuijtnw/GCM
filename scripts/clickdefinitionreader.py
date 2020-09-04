@@ -4,7 +4,7 @@ import numpy as np
 
 class ClickDefinition:
     """
-    Class used to initialize the click model using the input YAML file
+    Class used to initialize the click model using the input YAML file.
     """
     def __init__(self, loc, trans_matrix_def_func):
         """
