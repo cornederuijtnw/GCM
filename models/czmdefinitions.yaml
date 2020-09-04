@@ -1,0 +1,49 @@
+
+--- # czm definition
+click_state: 3
+non_click_state: 2
+no_items: &it_size 10
+list_size: 10
+no_states: 7
+init_state: 3
+batch_size: &b_size 500
+
+var:
+  gamma:
+    param_size: *b_size
+    var_type: 'session'
+    plus:
+      subsequent:
+        - [2, [0, 0, 1, 1, 0, 0, 0]]
+        - [3, [0, 0, 1, 1, 0, 0, 0]]
+    minus:
+      subsequent:
+        - [2, [-1, -1, 0, 0, 0, 0, 0]]
+        - [3, [-1, -1, 0, 0, 0, 0, 0]]
+
+  phi_S:
+    param_size: *it_size
+    var_type: 'item'
+    plus:
+      subsequent:
+        - [3, [0, 0, 0, 0, 1, 1, 0]]
+    minus:
+      subsequent:
+        - [3, [-1, -1, -1, -1, 0, 0, 0]]
+
+  phi_A:
+    param_size: *it_size
+    var_type: 'item'
+    plus:
+      init:
+        - [3, [0, 0, 0, 1, 0, 0, 0]]
+      subsequent:
+        - [2, [0, 1, 0, 1, 0, 0, 0]]
+        - [3, [0, 1, 0, 1, 0, 1, 0]]
+    minus:
+      init:
+        - [3, [0, 0, -1, 0, 0, 0, 0]]
+      subsequent:
+        - [2, [-1, 0, -1, 0, 0, 0, 0]]
+        - [3, [-1, 0, -1, 0, -1, 0, 0]]
+
