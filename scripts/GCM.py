@@ -6,7 +6,7 @@ import keras.backend as Kback
 from sklearn.metrics import log_loss
 from scipy.sparse import coo_matrix
 import multiprocessing as mp
-from allcode.misc.verboseprinter import VerbosePrinter as VP
+from scripts.verboseprinter import VerbosePrinter as VP
 
 
 class GCM:

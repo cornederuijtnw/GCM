@@ -61,7 +61,7 @@ class ClickDefinition:
     @property
     def non_click_state(self):
         """
-        The state at which an item is skiped but evaluated
+        The state at which an item is skipped but evaluated
         """
         return self._non_click_state
 
