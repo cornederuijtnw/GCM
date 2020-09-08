@@ -1,49 +1,43 @@
 
 --- # czm definition
 click_state: 3
-non_click_state: 2
-no_items: &it_size 10
-list_size: 10
+skip_state: 2
 no_states: 7
-init_state: 3
+list_size: 10
 batch_size: &b_size 500
+
+item_size: &it_size 10 # Not an obligatory key, but is convenient in this case
+
+t0_fixed:
+  phi_S: 0
+  gamma: 1
 
 var:
   gamma:
     param_size: *b_size
     var_type: 'session'
-    plus:
-      subsequent:
-        - [2, [0, 0, 1, 1, 0, 0, 0]]
-        - [3, [0, 0, 1, 1, 0, 0, 0]]
-    minus:
-      subsequent:
-        - [2, [-1, -1, 0, 0, 0, 0, 0]]
-        - [3, [-1, -1, 0, 0, 0, 0, 0]]
+    pos_mat:
+      - [2, [0, 0, 1, 1, 0, 0, 0]]
+      - [3, [0, 0, 1, 1, 0, 0, 0]]
+    neg_mat:
+      - [2, [-1, -1, 0, 0, 0, 0, 0]]
+      - [3, [-1, -1, 0, 0, 0, 0, 0]]
 
   phi_S:
     param_size: *it_size
     var_type: 'item'
-    plus:
-      subsequent:
-        - [3, [0, 0, 0, 0, 1, 1, 0]]
-    minus:
-      subsequent:
-        - [3, [-1, -1, -1, -1, 0, 0, 0]]
+    pos_mat:
+      - [3, [0, 0, 0, 0, 1, 1, 0]]
+    neg_mat:
+      - [3, [-1, -1, -1, -1, 0, 0, 0]]
 
   phi_A:
     param_size: *it_size
     var_type: 'item'
-    plus:
-      init:
-        - [3, [0, 0, 0, 1, 0, 0, 0]]
-      subsequent:
-        - [2, [0, 1, 0, 1, 0, 0, 0]]
-        - [3, [0, 1, 0, 1, 0, 1, 0]]
-    minus:
-      init:
-        - [3, [0, 0, -1, 0, 0, 0, 0]]
-      subsequent:
-        - [2, [-1, 0, -1, 0, 0, 0, 0]]
-        - [3, [-1, 0, -1, 0, -1, 0, 0]]
+    pos_mat:
+      - [2, [0, 1, 0, 1, 0, 0, 0]]
+      - [3, [0, 1, 0, 1, 0, 1, 0]]
+    neg_mat:
+      - [2, [-1, 0, -1, 0, 0, 0, 0]]
+      - [3, [-1, 0, -1, 0, -1, 0, 0]]
 

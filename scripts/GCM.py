@@ -55,39 +55,34 @@ class GCM:
 
         it = 0
 
-        man = mp.Manager()
-        man_res = man.dict()
-        # To be able to share in memory
-        man_res['model_def'] = model_def
-
         # Step 2: EM algorithm:
         while param_norm > tol and it < max_iter:
             VP.print("Iteration: " + str(it), verbose)
 
             # Step 2.1: E-step:
-            pool = mp.Pool(n_jobs)
+            # pool = mp.Pool(n_jobs)
 
             VP.print("Running E-step ...", verbose)
 
             # Use for debugging (same as above, but not paralized)
-            # all_marginal_dat = [GCM._compute_marginals_IO_HMM(click_mat[i, :],
-            #                                 parameter_dic,
-            #                                 list_size,
-            #                                 item_order[i, :],
-            #                                 man_res['model_def'],
-            #                                 i) for i in np.arange(no_sessions)]
-
-            # Compute all the marginal probabilities
-            all_marginal_dat = [pool.apply(GCM._compute_marginals_IO_HMM,
-                                           args=(click_mat[i, :],
+            all_marginal_dat = [GCM._compute_marginals_IO_HMM(click_mat[i, :],
                                             parameter_dic,
                                             list_size,
                                             item_order[i, :],
-                                            man_res['model_def'],
-                                            i)) for i in np.arange(no_sessions)]
+                                            model_def,
+                                            i) for i in np.arange(no_sessions)]
 
-            pool.close()
-            pool.join()
+            # Compute all the marginal probabilities
+            # all_marginal_dat = [pool.apply(GCM._compute_marginals_IO_HMM,
+            #                                args=(click_mat[i, :],
+            #                                 parameter_dic,
+            #                                 list_size,
+            #                                 item_order[i, :],
+            #                                 model_def,
+            #                                 i)) for i in np.arange(no_sessions)]
+            #
+            # pool.close()
+            # pool.join()
 
             # Format the marginal probabilities as weights
             weight_dic, click_prob = GCM._format_weights_and_covariates(all_marginal_dat,
@@ -218,11 +213,9 @@ class GCM:
         return var_models, pred
 
     @staticmethod
-    def _compute_marginals_IO_HMM(click_vec, var_dic, list_size, item_order, model_def_mlist, i):
+    def _compute_marginals_IO_HMM(click_vec, var_dic, list_size, item_order, model_def, i):
         # Determine the sessions weights for clicks and skips
-        model_def = model_def_mlist
-
-        H_mat, zeta_vec = GCM._compute_IO_HMM_est(click_vec, var_dic, item_order, list_size, model_def)
+        H_mat, zeta_vec = GCM._compute_IO_HMM_est(click_vec, var_dic, item_order, list_size, model_def, i)
 
         ncs = model_def.non_click_state
         cs = model_def.click_state
@@ -231,7 +224,7 @@ class GCM:
         for key, act_value in model_def.act_matrices.items():
             # Negative H weights are just to indicate that we have 1-theta instead of theta.
             # Easy way of transmitting that information
-            W_plus = H_mat * act_value[0]
+            W_plus = H_mat * act_value[0] #TODO: TILE HERE
             W_minus = H_mat * act_value[1]
 
             # Only keep the click and non-click states and to vector representation:
@@ -246,9 +239,9 @@ class GCM:
         return {'reg_out': session_weights, 'zeta_vec': zeta_vec}
 
     @staticmethod
-    def _compute_IO_HMM_est(click_vec, var_dic, item_order, list_size, model_def):
+    def _compute_IO_HMM_est(click_vec, var_dic, item_order, list_size, model_def, i):
         # Determine all sessions weights and the state probabilities (zeta vector)
-        trans_matrices = model_def.trans_matrix_def_func(model_def, var_dic, item_order)
+        trans_matrices = GCM._get_trans_mat(model_def, var_dic, item_order, i)
         x_init_state = model_def.init_state
 
         # The forward-backward algorithm:
@@ -285,6 +278,44 @@ class GCM:
                 B[:, t-1] = click_states * np.dot(trans_matrices[t - 1].T, B[:, t].T)
 
         return H, zeta
+
+    @staticmethod
+    def _get_trans_mat(model_definitions, vars_dic, item_order, i):
+        # Initialize the M matrices:
+        trans_matrices = []
+
+        trans_mat = np.zeros((model_definitions.no_states, model_definitions.no_states))
+        one_mat = np.ones((model_definitions.no_states, model_definitions.no_states))
+        cur_param = 1
+
+        # Just to ensure it is a transition matrix, only the click state (= initial state) is omitted
+        for t in range(model_definitions.list_size):
+            for var_name, act_mat in model_definitions.act_matrices.items():
+                if var_name in model_definitions.t0_fixed and t == 0:
+                    cur_param = model_definitions.t0_fixed[var_name]
+                elif var_name in model_definitions.fixed_params:
+                    cur_param = model_definitions.fixed_params[var_name]
+                elif model_definitions.var_type[var_name] == 'item':
+                    cur_param = vars_dic[var_name][item_order[t]]
+                else:  # type = session
+                    cur_param = vars_dic[var_name][i]
+
+                # First is the positive activation matrix, second the negative
+
+                # The latter ceiling is to avoid that the update is positive while the parameter equals zero
+                update = cur_param * (act_mat[0] + act_mat[1]) - np.ceil(cur_param) * act_mat[1]
+
+                # I.e., overlapping + new updates + old updates
+                trans_mat = trans_mat * update \
+                             + np.ceil((act_mat[0] - act_mat[1] - np.ceil(trans_mat))) * update \
+                             + np.ceil(-1 * (act_mat[0] - act_mat[1] - np.ceil(trans_mat))) * trans_mat
+
+            #As final step absorb everything in the absorbing state
+            trans_mat[:, model_definitions.no_states - 1] = 1 - np.sum(trans_mat, axis=1)  # Should be row sums
+            trans_mat = trans_mat.T
+            trans_matrices.append(trans_mat)
+
+        return trans_matrices
 
     @staticmethod
     def _min_prob_or_zero(val):

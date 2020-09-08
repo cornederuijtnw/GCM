@@ -6,11 +6,9 @@ class ClickDefinition:
     """
     Class used to initialize the click model using the input YAML file.
     """
-    def __init__(self, loc, trans_matrix_def_func):
+    def __init__(self, loc):
         """
-
         :param loc: Location of the YAML file
-        :param trans_matrix_def_func: Reference to the function defining the transition matrix
         """
         self._loc = loc
         self._act_matrices = {}
@@ -21,14 +19,21 @@ class ClickDefinition:
             definitions = yaml.load(f)
 
             self._click_state = definitions['click_state']
-            self._non_click_state = definitions['non_click_state']
-            self._no_items = definitions['no_items']
+            self._non_click_state = definitions['skip_state']
             self._list_size = definitions['list_size']
             self._no_states = definitions['no_states']
-            self._init_state = definitions['init_state']
             self._batch_size = definitions['batch_size']
+
+            if 't0_fixed' in definitions:
+                self._t0_fixed = definitions['t0_fixed']
+            else:
+                self._t0_fixed = {}
+
+            if 'fixed_params' in definitions:
+                self._fixed_params = definitions['fixed_params']
+            else:
+                self._fixed_params = {}
             self._init_act_matrices(definitions['var'])
-            self._trans_matrix_def_func = trans_matrix_def_func
 
     @property
     def batch_size(self):
@@ -59,7 +64,7 @@ class ClickDefinition:
         return self._click_state
 
     @property
-    def non_click_state(self):
+    def skip_state(self):
         """
         The state at which an item is skipped but evaluated
         """
@@ -68,16 +73,9 @@ class ClickDefinition:
     @property
     def init_state(self):
         """
-        Initial state of the model during the start of each session
+        Initial state of the model during the start of each session (always equals the click state)
         """
-        return self._init_state
-
-    @property
-    def no_items(self):
-        """
-        Total number of items in the model
-        """
-        return self._no_items
+        return self._click_state
 
     @property
     def list_size(self):
@@ -101,33 +99,32 @@ class ClickDefinition:
         return self._act_matrices
 
     @property
-    def trans_matrix_def_func(self):
+    def t0_fixed(self):
         """
-        Reference to the function defining the transition matrix
+        A dictionary of parameters being fixed from transition 0 to 1
         """
-        return self._trans_matrix_def_func
+        return self._t0_fixed
+
+    @property
+    def fixed_params(self):
+        """
+        A dictionary of parameters being fixed, is overwritten by t0_fixed for transitions between 0 and 1
+        """
+        return self._fixed_params
 
     def _init_act_matrices(self, act_mat_dic):
         # Initializes the activation matrices, parameters sizes and variable types
         for key, d in act_mat_dic.items():
-            self._act_matrices[key] = [self._init_act_mat(d['plus']), self._init_act_mat(d['minus'])]
+            self._act_matrices[key] = [self._init_act_mat(d['pos_mat']), self._init_act_mat(d['neg_mat'])]
             self._param_size[key] = d['param_size']
             self._var_type[key] = d['var_type']
 
     def _init_act_mat(self, d):
         # Initialized a single activation matrix
         act_mat = np.zeros((self._no_states, self._no_states))
-        init_mat = np.zeros((self._no_states, self._no_states))  # Transition from 0 to 1 may be different
 
-        for row_val in d['subsequent']:
+        for row_val in d:
             act_mat[row_val[0], :] = np.array(row_val[1])
-        if 'init' in d:
-            for row_val in d['init']:
-                init_mat[row_val[0], :] = np.array(row_val[1])
-
-        act_mat = np.concatenate((init_mat.reshape((self._no_states, self._no_states, 1)),
-                                  np.tile(act_mat.T.reshape((self._no_states, self._no_states, 1)),
-                                      (1, 1, self._list_size - 1))), axis=2)
 
         return act_mat
 

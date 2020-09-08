@@ -7,66 +7,68 @@ from keras.layers import Dense
 from keras.optimizers import RMSprop
 
 
-class CZMModel:
-    @staticmethod
-    def get_trans_mat(model_definitions, vars_dic, item_order):
-        no_states = model_definitions.no_states
-        list_size = model_definitions.list_size
-
-        # Initialize the M matrices:
-        trans_matrices = []
-
-        trans_mat = np.zeros((no_states, no_states))
-
-        # Note that we omit state 3, the click state
-        trans_mat[0, no_states - 1] = 1
-        trans_mat[1, no_states - 1] = 1
-        trans_mat[2, no_states - 1] = 1
-        trans_mat[4, no_states - 1] = 1
-        trans_mat[5, no_states - 1] = 1
-        trans_mat[6, no_states - 1] = 1
-
-        # Evaluation states:
-        trans_mat[3, 2] = 1 - vars_dic['phi_A'][item_order[0]]
-        trans_mat[3, 3] = vars_dic['phi_A'][item_order[0]]
-
-        # Bit of a silly fix, but the matrix should be defined in transpose (i.e, the 'from' is on the columns)
-        trans_mat = trans_mat.T
-        trans_matrices.append(trans_mat)
-
-        for t in range(1, list_size):
-            trans_mat = np.zeros((no_states, no_states))
-
-            # absorbing states (note, state 6 is the absorbing state), the other are for product separability:
-            trans_mat[0, no_states - 1] = 1
-            trans_mat[1, no_states - 1] = 1
-            trans_mat[4, no_states - 1] = 1
-            trans_mat[5, no_states - 1] = 1
-            trans_mat[6, no_states - 1] = 1
-
-            # Evaluation states:
-            trans_mat[2, 0] = (1 - vars_dic['gamma'][t]) * (1 - vars_dic['phi_A'][item_order[t]])
-            trans_mat[2, 1] = (1 - vars_dic['gamma'][t]) * vars_dic['phi_A'][item_order[t]]
-            trans_mat[2, 2] = vars_dic['gamma'][t] * (1 - vars_dic['phi_A'][item_order[t]])
-            trans_mat[2, 3] = vars_dic['gamma'][t] * vars_dic['phi_A'][item_order[t]]
-
-            # Others are 0
-            trans_mat[3, 0] = (1 - vars_dic['gamma'][t]) * (1 - vars_dic['phi_A'][item_order[t]]) * (
-                    1 - vars_dic['phi_S'][item_order[t - 1]])
-            trans_mat[3, 1] = (1 - vars_dic['gamma'][t]) * vars_dic['phi_A'][item_order[t]] * (
-                    1 - vars_dic['phi_S'][item_order[t - 1]])
-            trans_mat[3, 2] = vars_dic['gamma'][t] * (1 - vars_dic['phi_A'][item_order[t]]) * (
-                    1 - vars_dic['phi_S'][item_order[t - 1]])
-            trans_mat[3, 3] = vars_dic['gamma'][t] * vars_dic['phi_A'][item_order[t]] * (
-                    1 - vars_dic['phi_S'][item_order[t - 1]])
-            trans_mat[3, 4] = (1 - vars_dic['phi_A'][item_order[t]]) * vars_dic['phi_S'][item_order[t - 1]]
-            trans_mat[3, 5] = vars_dic['phi_A'][item_order[t]] * vars_dic['phi_S'][item_order[t - 1]]
-
-            # Bit of a silly fix, but the matrix should be defined in transpose (i.e, the 'from' is on the columns)
-            trans_mat = trans_mat.T
-            trans_matrices.append(trans_mat)
-
-        return trans_matrices
+#class CZMModel:
+    # @staticmethod
+    # def get_trans_mat(model_definitions, vars_dic, item_order, i):
+    #     no_states = model_definitions.no_states
+    #     list_size = model_definitions.list_size
+    #
+    #     # Initialize the M matrices:
+    #     trans_matrices = []
+    #
+    #     trans_mat = np.zeros((no_states, no_states))
+    #
+    #     # Note that we omit state 3, the click state
+    #     trans_mat[0, no_states - 1] = 1
+    #     trans_mat[1, no_states - 1] = 1
+    #     trans_mat[2, no_states - 1] = 1
+    #     trans_mat[4, no_states - 1] = 1
+    #     trans_mat[5, no_states - 1] = 1
+    #     trans_mat[6, no_states - 1] = 1
+    #
+    #     # Evaluation states:
+    #     trans_mat[3, 2] = 1 - vars_dic['phi_A'][item_order[0]]
+    #     trans_mat[3, 3] = vars_dic['phi_A'][item_order[0]]
+    #
+    #     # Bit of a silly fix, but the matrix should be defined in transpose (i.e, the 'from' is on the columns)
+    #     trans_mat = trans_mat.T
+    #     trans_matrices.append(trans_mat)
+    #
+    #     for t in range(1, list_size):
+    #         trans_mat = np.zeros((no_states, no_states))
+    #
+    #         # absorbing states (note, state 6 is the absorbing state), the other are for product separability:
+    #         trans_mat[0, no_states - 1] = 1
+    #         trans_mat[1, no_states - 1] = 1
+    #         trans_mat[4, no_states - 1] = 1
+    #         trans_mat[5, no_states - 1] = 1
+    #         trans_mat[6, no_states - 1] = 1
+    #
+    #         # Evaluation states:
+    #         trans_mat[2, 0] = (1 - vars_dic['gamma'][t]) * (1 - vars_dic['phi_A'][item_order[t]])
+    #         trans_mat[2, 1] = (1 - vars_dic['gamma'][t]) * vars_dic['phi_A'][item_order[t]]
+    #         trans_mat[2, 2] = vars_dic['gamma'][t] * (1 - vars_dic['phi_A'][item_order[t]])
+    #         trans_mat[2, 3] = vars_dic['gamma'][t] * vars_dic['phi_A'][item_order[t]]
+    #
+    #         # Others are 0
+    #         trans_mat[3, 0] = (1 - vars_dic['gamma'][t]) * (1 - vars_dic['phi_A'][item_order[t]]) * (
+    #                 1 - vars_dic['phi_S'][item_order[t - 1]])
+    #         trans_mat[3, 1] = (1 - vars_dic['gamma'][t]) * vars_dic['phi_A'][item_order[t]] * (
+    #                 1 - vars_dic['phi_S'][item_order[t - 1]])
+    #         trans_mat[3, 2] = vars_dic['gamma'][t] * (1 - vars_dic['phi_A'][item_order[t]]) * (
+    #                 1 - vars_dic['phi_S'][item_order[t - 1]])
+    #         trans_mat[3, 3] = vars_dic['gamma'][t] * vars_dic['phi_A'][item_order[t]] * (
+    #                 1 - vars_dic['phi_S'][item_order[t - 1]])
+    #         trans_mat[3, 4] = (1 - vars_dic['phi_A'][item_order[t]]) * vars_dic['phi_S'][item_order[t - 1]]
+    #         trans_mat[3, 5] = vars_dic['phi_A'][item_order[t]] * vars_dic['phi_S'][item_order[t - 1]]
+    #
+    #         # Bit of a silly fix, but the matrix should be defined in transpose (i.e, the 'from' is on the columns)
+    #         trans_mat = trans_mat.T
+    #         trans_matrices.append(trans_mat)
+    #
+    #         trans_mat_alt = CZMModel.get_trans_mat_alt(model_definitions, vars_dic, item_order, i)
+    #
+    #     return trans_matrices
 
 
 if __name__ == "__main__":
@@ -75,7 +77,7 @@ if __name__ == "__main__":
     click_data = pd.read_csv("./data/small_example/simulation_res_train.csv", index_col=False)
     prod_position = pd.read_csv("./data/small_example/simulation_item_props.csv", index_col=False)
 
-    model_def = ClickDefinition(yaml_file_loc, CZMModel.get_trans_mat)
+    model_def = ClickDefinition(yaml_file_loc)
 
     # Make sure order is correct:
     click_data = click_data.sort_values(['user_id', 'session_count', 'item_order'])
