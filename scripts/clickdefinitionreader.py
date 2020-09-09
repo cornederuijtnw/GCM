@@ -23,6 +23,7 @@ class ClickDefinition:
             self._list_size = definitions['list_size']
             self._no_states = definitions['no_states']
             self._batch_size = definitions['batch_size']
+            self._no_items = definitions['item_size']
 
             if 't0_fixed' in definitions:
                 self._t0_fixed = definitions['t0_fixed']
@@ -34,6 +35,13 @@ class ClickDefinition:
             else:
                 self._fixed_params = {}
             self._init_act_matrices(definitions['var'])
+
+    @property
+    def no_items(self):
+        """
+        Number of items distinguished by the model
+        """
+        return self._no_items
 
     @property
     def batch_size(self):
@@ -115,7 +123,14 @@ class ClickDefinition:
     def _init_act_matrices(self, act_mat_dic):
         # Initializes the activation matrices, parameters sizes and variable types
         for key, d in act_mat_dic.items():
-            self._act_matrices[key] = [self._init_act_mat(d['pos_mat']), self._init_act_mat(d['neg_mat'])]
+            if 'fixed_mat' not in d:
+                fixed_mat = np.array([])
+            else:
+                fixed_mat = d['fixed_mat']
+
+            self._act_matrices[key] = {'pos_mat': self._init_act_mat(d['pos_mat']),
+                                       'neg_mat': self._init_act_mat(d['neg_mat']),
+                                       'fixed_mat': self._init_act_mat(fixed_mat)}
             self._param_size[key] = d['param_size']
             self._var_type[key] = d['var_type']
 

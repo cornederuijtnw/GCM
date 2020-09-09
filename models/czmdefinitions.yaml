@@ -6,7 +6,7 @@ no_states: 7
 list_size: 10
 batch_size: &b_size 500
 
-item_size: &it_size 10 # Not an obligatory key, but is convenient in this case
+item_size: &it_size 10 # ALSO AN OBLIGATORY KEY (note that this is effective number of items, i.e., how many items the model could actually distinguish. If two items have the same covariates, they can be considered as the same variable)!
 
 t0_fixed:
   phi_S: 0
@@ -20,8 +20,10 @@ var:
       - [2, [0, 0, 1, 1, 0, 0, 0]]
       - [3, [0, 0, 1, 1, 0, 0, 0]]
     neg_mat:
-      - [2, [-1, -1, 0, 0, 0, 0, 0]]
-      - [3, [-1, -1, 0, 0, 0, 0, 0]]
+      - [2, [1, 1, 0, 0, 0, 0, 0]]
+      - [3, [1, 1, 0, 0, 0, 0, 0]]
+    fixed_mat:
+      - [3, [0, 0, 0, 0, 1, 1, 0]]
 
   phi_S:
     param_size: *it_size
@@ -29,7 +31,9 @@ var:
     pos_mat:
       - [3, [0, 0, 0, 0, 1, 1, 0]]
     neg_mat:
-      - [3, [-1, -1, -1, -1, 0, 0, 0]]
+      - [3, [1, 1, 1, 1, 0, 0, 0]]
+    fixed_mat:
+      - [2, [1, 1, 1, 1, 0, 0, 0]]
 
   phi_A:
     param_size: *it_size
@@ -38,6 +42,6 @@ var:
       - [2, [0, 1, 0, 1, 0, 0, 0]]
       - [3, [0, 1, 0, 1, 0, 1, 0]]
     neg_mat:
-      - [2, [-1, 0, -1, 0, 0, 0, 0]]
-      - [3, [-1, 0, -1, 0, -1, 0, 0]]
+      - [2, [1, 0, 1, 0, 0, 0, 0]]
+      - [3, [1, 0, 1, 0, 1, 0, 0]]
 
