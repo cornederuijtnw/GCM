@@ -1,0 +1,15 @@
+
+--- # Simulation definition
+has_cookie_param: False
+no_items: 10
+no_users: 1000
+warm_up_sessions: 100
+list_size: 10
+user_dist_sens: 1
+user_arr_rate: 0.2
+salience_att: 5
+salience_satis: 5
+model_lifetime_phases: 0.5
+eval_cut_off1: 0
+eval_cut_off2: 86400
+cont_param: 0.9

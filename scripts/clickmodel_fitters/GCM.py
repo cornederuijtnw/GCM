@@ -11,7 +11,7 @@ from scripts.verboseprinter import VerbosePrinter as VP
 
 class GCM:
     """
-    Static class for fitting Generalized click models.
+    Static class for fitting Generalized click model_definitions.
     """
     # Minimum probabilistic signal
     MIN_SIGNAL = 10**(-5)
@@ -33,7 +33,7 @@ class GCM:
         :param seed: The random seed
         :param tol: Tolerance with regards to the likelihood of the model
         :param verbose: Print status of EM
-        :return: A list of the fitted variable models, current parameter estimates, and the a list of entropies computed
+        :return: A list of the fitted variable model_definitions, current parameter estimates, and the a list of entropies computed
         at each iteration.
         '''
 
@@ -92,7 +92,8 @@ class GCM:
                                                             model_def)
 
             # # Compute entropy using the zeta vector (state probability vector)
-            cond_entropy.append(log_loss(click_mat.flatten(), click_prob.flatten()))
+            cur_entropy = log_loss(click_mat.flatten(), click_prob.flatten())
+            cond_entropy.append(cur_entropy)
 
             VP.print("Current conditional entropy:" + str(round(cond_entropy[it], 5)), verbose)
             VP.print("Running M-step ...", verbose)
@@ -110,6 +111,7 @@ class GCM:
                 parameter_dic[var_name] = param_ests
 
             VP.print("Current norm: " + str(round(param_norm, 5)), verbose)
+            VP.print("Current perplexity: " + str(round(cur_entropy, 5)), verbose)
 
             it += 1
 
