@@ -59,30 +59,44 @@ class GCM:
         while param_norm > tol and it < max_iter:
             VP.print("Iteration: " + str(it), verbose)
 
+            pred = GCM._get_prediction(var_models, var_dic)
+            # # Compute norm:
+            param_norm = 0
+            for var_name, param_ests in pred.items():
+                # 1) Compute the norm
+                param_norm += la.norm((param_ests.flatten(), parameter_dic[var_name]))
+
+                # 2) Update the parameters:
+                parameter_dic[var_name] = param_ests
+
+            VP.print("Current norm: " + str(round(param_norm, 5)), verbose)
+            VP.print("Current perplexity: " + str(round(cur_entropy, 5)), verbose)
+
             # Step 2.1: E-step:
-            pool = mp.Pool(n_jobs)
+            # pool = mp.Pool(n_jobs)
 
             VP.print("Running E-step ...", verbose)
 
             # Use for debugging (same as above, but not paralized)
-            # all_marginal_dat = [GCM._compute_marginals_IO_HMM(click_mat[i, :],
-            #                                 parameter_dic,
-            #                                 list_size,
-            #                                 item_order[i, :],
-            #                                 model_def,
-            #                                 i) for i in np.arange(no_sessions)]
-
-            # Compute all the marginal probabilities
-            all_marginal_dat = [pool.apply(GCM._compute_marginals_IO_HMM,
-                                           args=(click_mat[i, :],
+            all_marginal_dat = [GCM._compute_marginals_IO_HMM(click_mat[i, :],
                                             parameter_dic,
                                             list_size,
                                             item_order[i, :],
                                             model_def,
-                                            i)) for i in np.arange(no_sessions)]
+                                            i) for i in np.arange(no_sessions)]
 
-            pool.close()
-            pool.join()
+            # Compute all the marginal probabilities
+            # TODO: USE MAP INSTEAD, OTHERWISE WON'T BE OF MUCH USE...
+            # all_marginal_dat = [pool.apply(GCM._compute_marginals_IO_HMM,
+            #                                args=(click_mat[i, :],
+            #                                 parameter_dic,
+            #                                 list_size,
+            #                                 item_order[i, :],
+            #                                 model_def,
+            #                                 i)) for i in np.arange(no_sessions)]
+
+            # pool.close()
+            # pool.join()
 
             # Format the marginal probabilities as weights
             weight_dic, click_prob = GCM._format_weights_and_covariates(all_marginal_dat,
@@ -99,19 +113,7 @@ class GCM:
             VP.print("Running M-step ...", verbose)
             #
             # # M-step (since keras already paralizes, I do not):
-            var_models, pred = GCM._optimize_params(var_models, weight_dic, var_dic, verbose)
-
-            # # Compute norm:
-            param_norm = 0
-            for var_name, param_ests in pred.items():
-                # 1) Compute the norm
-                param_norm += la.norm((param_ests.flatten(), parameter_dic[var_name]))
-
-                # 2) Update the parameters:
-                parameter_dic[var_name] = param_ests
-
-            VP.print("Current norm: " + str(round(param_norm, 5)), verbose)
-            VP.print("Current perplexity: " + str(round(cur_entropy, 5)), verbose)
+            var_models = GCM._optimize_params(var_models, weight_dic, var_dic, verbose)
 
             it += 1
 
@@ -194,10 +196,23 @@ class GCM:
         return index_weight_mat
 
     @staticmethod
+    def _get_prediction(var_models, var_dic):
+        # Procedure that computes the current variable predictions, using the current model parameters
+        pred = {}
+
+        for var_name, k_model in var_models.items():
+            X = np.vstack((var_dic[var_name], var_dic[var_name]))
+            model = var_models[var_name]
+
+            # Note that since we first double the number of rows, division by 2 to always results in a natural number
+            pred[var_name] = model.predict_proba(X[:(int)(X.shape[0]/2), :]).flatten()
+
+        return pred
+
+    @staticmethod
     def _optimize_params(var_models, weight_dic, var_dic, verbose):
         # Procedure that finds the next parameters, based on the current E-step
         callback = EarlyStopping(monitor='loss', patience=5)
-        pred = {}
 
         for var_name, k_model in var_models.items():
 
@@ -206,13 +221,9 @@ class GCM:
             model = var_models[var_name]
 
             model.fit(X, Y, batch_size=Y.shape[0], epochs=100, verbose=verbose, callbacks=[callback])
-
             var_models[var_name] = model
 
-            # Note that since we first double the number of rows, division by 2 to always results in a natural number
-            pred[var_name] = model.predict_proba(X[:(int)(X.shape[0]/2), :]).flatten()
-
-        return var_models, pred
+        return var_models
 
     @staticmethod
     def _compute_marginals_IO_HMM(click_vec, var_dic, list_size, item_order, model_def, i):
@@ -285,9 +296,9 @@ class GCM:
     def _get_trans_mat(md, vars_dic, item_order, i):
         # Initialize the M matrices:
         trans_matrices = []
-        expected_sums = np.zeros(md.no_states)
-        expected_sums[md.click_state] = 1
-        expected_sums[md.skip_state] = 1
+        # expected_sums = np.zeros(md.no_states)
+        # expected_sums[md.click_state] = 1
+        # expected_sums[md.skip_state] = 1
         cur_param = 1
 
         # Just to ensure it is a transition matrix, only the click state (= initial state) is omitted
@@ -296,12 +307,15 @@ class GCM:
             for var_name, act_mat in md.act_matrices.items():
                 if var_name in md.t0_fixed and t == 0:
                     cur_param = md.t0_fixed[var_name]
-                elif var_name in md.fixed_params:
-                    cur_param = md.fixed_params[var_name]
                 elif md.var_type[var_name] == 'item':
                     cur_param = vars_dic[var_name][item_order[t]]
-                else:  # type = session
+                elif md.var_type[var_name] == 'session':
                     cur_param = vars_dic[var_name][i]
+                elif md.var_type[var_name] == 'pos':
+                    cur_param = vars_dic[var_name][t]
+                else:
+                    raise KeyError("Parameter type " + str(md.var_type[var_name]) +
+                                   " is not supported. Supported types: 'item', 'session' and 'pos'")
 
                 update = cur_param * (act_mat['pos_mat'] - act_mat['neg_mat']) \
                     + act_mat['neg_mat'] + act_mat['fixed_mat']
@@ -309,14 +323,14 @@ class GCM:
                 # I.e., overlapping + new updates + old updates
                 trans_mat = trans_mat * update
 
-            try:
-                np.testing.assert_array_almost_equal(np.sum(trans_mat, axis=1), expected_sums)
-            except AssertionError as e:
-                raise ValueError("Probabilities in transition matrix at time: " + str(t) + ", session: " + str(i) +
-                                 ", do not sum to one. Assertion error message: " + str(e))
+            # try:
+            #     np.testing.assert_array_almost_equal(np.sum(trans_mat, axis=1), expected_sums)
+            # except AssertionError as e:
+            #     raise ValueError("Probabilities in transition matrix at time: " + str(t) + ", session: " + str(i) +
+            #                      ", do not sum to one. Assertion error message: " + str(e))
 
             # As final step, absorb everything in the absorbing state
-            trans_mat[:, md.no_states - 1] = 1 - expected_sums
+            # trans_mat[:, md.no_states - 1] = 1 - expected_sums
 
             # Normalize (to avoid small errors):
             trans_mat = trans_mat * np.tile(1/np.sum(trans_mat, axis=1), (md.no_states, 1)).T

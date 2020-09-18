@@ -19,21 +19,20 @@ class ClickDefinition:
             definitions = yaml.load(f)
 
             self._click_state = definitions['click_state']
-            self._non_click_state = definitions['skip_state']
+            self._absorbing_state = definitions['absorbing_state']
             self._list_size = definitions['list_size']
             self._no_states = definitions['no_states']
             self._batch_size = definitions['batch_size']
             self._no_items = definitions['item_size']
+
+            if 'skip_state' in definitions:
+                self._non_click_state = definitions['skip_state']
 
             if 't0_fixed' in definitions:
                 self._t0_fixed = definitions['t0_fixed']
             else:
                 self._t0_fixed = {}
 
-            if 'fixed_params' in definitions:
-                self._fixed_params = definitions['fixed_params']
-            else:
-                self._fixed_params = {}
             self._init_act_matrices(definitions['var'])
 
     @property
@@ -113,26 +112,26 @@ class ClickDefinition:
         """
         return self._t0_fixed
 
-    @property
-    def fixed_params(self):
-        """
-        A dictionary of parameters being fixed, is overwritten by t0_fixed for transitions between 0 and 1
-        """
-        return self._fixed_params
-
     def _init_act_matrices(self, act_mat_dic):
         # Initializes the activation matrices, parameters sizes and variable types
         for key, d in act_mat_dic.items():
-            if 'fixed_mat' not in d:
-                fixed_mat = np.array([])
-            else:
-                fixed_mat = d['fixed_mat']
+            pos_mat = self._get_act_mat(d, 'pos_mat')
+            neg_mat = self._get_act_mat(d, 'neg_mat')
+            fixed_mat = self._get_act_mat(d, 'fixed_mat')
 
-            self._act_matrices[key] = {'pos_mat': self._init_act_mat(d['pos_mat']),
-                                       'neg_mat': self._init_act_mat(d['neg_mat']),
+            self._act_matrices[key] = {'pos_mat': self._init_act_mat(pos_mat),
+                                       'neg_mat': self._init_act_mat(neg_mat),
                                        'fixed_mat': self._init_act_mat(fixed_mat)}
             self._param_size[key] = d['param_size']
             self._var_type[key] = d['var_type']
+
+    def _get_act_mat(self, d, matrix_type):
+        if matrix_type not in d:
+            mat = np.array([])
+        else:
+            mat = d[matrix_type]
+
+        return mat
 
     def _init_act_mat(self, d):
         # Initialized a single activation matrix
