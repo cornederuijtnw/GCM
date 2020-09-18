@@ -60,17 +60,19 @@ class GCM:
             VP.print("Iteration: " + str(it), verbose)
 
             pred = GCM._get_prediction(var_models, var_dic)
-            # # Compute norm:
-            param_norm = 0
-            for var_name, param_ests in pred.items():
-                # 1) Compute the norm
-                param_norm += la.norm((param_ests.flatten(), parameter_dic[var_name]))
 
-                # 2) Update the parameters:
+            #  Update the parameters
+            for var_name, param_ests in pred.items():
                 parameter_dic[var_name] = param_ests
 
-            VP.print("Current norm: " + str(round(param_norm, 5)), verbose)
-            VP.print("Current perplexity: " + str(round(cur_entropy, 5)), verbose)
+            if it > 0:
+                param_norm = 0
+                for var_name, param_ests in pred.items():
+                    #  Compute the norm
+                    param_norm += la.norm((param_ests.flatten(), parameter_dic[var_name]))
+
+                VP.print("Current norm: " + str(round(param_norm, 5)), verbose)
+                VP.print("Current perplexity: " + str(round(cur_entropy, 5)), verbose)
 
             # Step 2.1: E-step:
             # pool = mp.Pool(n_jobs)
@@ -312,7 +314,8 @@ class GCM:
                 elif md.var_type[var_name] == 'session':
                     cur_param = vars_dic[var_name][i]
                 elif md.var_type[var_name] == 'pos':
-                    cur_param = vars_dic[var_name][t]
+                    cur_param = vars_dic[var_name][t * md.list_size:((t +1 ) * md.list_size)]\
+                        .reshape((md.list_size, md.list_size))# This is always a list_size**2 matrix!
                 else:
                     raise KeyError("Parameter type " + str(md.var_type[var_name]) +
                                    " is not supported. Supported types: 'item', 'session' and 'pos'")
