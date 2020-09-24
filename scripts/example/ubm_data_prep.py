@@ -46,20 +46,15 @@ if __name__ == "__main__":
                                         .sort_values()
                                         .unique())
 
-    # pospos_feature_mat_gamma = np.vstack([np.tile(np.eye(model_def.list_size, 1, -k), model_def.list_size).T
-    #                             for k in range(model_def.list_size)]).T
-    pospos_feature_mat_gamma = np.eye(model_def.list_size**2)
-
-    pos_feature_mat_tau = np.hstack([np.hstack((np.zeros((model_def.list_size, k)),
+    pos_feature_mat_tau = np.vstack([np.hstack((np.zeros((model_def.list_size, k)),
                np.hstack((np.ones(k), np.zeros(model_def.list_size - k))).reshape(-1, 1),
                np.zeros((model_def.list_size, model_def.list_size - k - 1)))).flatten()
-        for k in range(1, model_def.list_size)]) # so dimension in de order of list_size**3
+        for k in range(1, model_def.list_size)])  # so dimension in de order of list_size**3
 
-    # pos_feature_mat_tau = np.hstack([np.eye(model_def.list_size, k=k).flatten()
-    #                                  for k in range(model_def.list_size)])\
-    #     .reshape((-1, 1))  # so dimension in de order of list_size**2
+    pos_feature_gamma = np.eye(model_def.list_size, model_def.list_size)
+    #pos_feature_gamma = np.triu(np.ones((model_def.list_size, model_def.list_size )), 1)
 
-    var_dic = {'phi_A': item_feature_mat_A, 'gamma': pospos_feature_mat_gamma, 'tau': pos_feature_mat_tau}
+    var_dic = {'phi_A': item_feature_mat_A, 'gamma': pos_feature_gamma, 'tau': pos_feature_mat_tau}
 
     var_dic_file = open(var_dic_store_loc, "wb")
     pl.dump(var_dic, var_dic_file)

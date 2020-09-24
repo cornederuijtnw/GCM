@@ -42,13 +42,8 @@ class GCM:
 
         no_sessions = click_mat.shape[0]
         list_size = model_def.list_size
-        parameter_dic = {}
+        pred = {}
         var_type_dic = model_def.var_type
-        param_shapes = model_def.param_shapes
-
-        # probability initialization
-        for key, item in var_dic.items():
-            parameter_dic[key] = rd.uniform(size=param_shapes[key])
 
         param_norm = 100
         cond_entropy = []
@@ -61,15 +56,11 @@ class GCM:
 
             pred = GCM._get_prediction(var_models, var_dic)
 
-            #  Update the parameters
-            for var_name, param_ests in pred.items():
-                parameter_dic[var_name] = param_ests
-
             if it > 0:
                 param_norm = 0
                 for var_name, param_ests in pred.items():
                     #  Compute the norm
-                    param_norm += la.norm((param_ests.flatten(), parameter_dic[var_name]))
+                    param_norm += la.norm((param_ests.flatten(), pred[var_name]))
 
                 VP.print("Current norm: " + str(round(param_norm, 5)), verbose)
                 VP.print("Current perplexity: " + str(round(cur_entropy, 5)), verbose)
@@ -81,7 +72,7 @@ class GCM:
 
             # Use for debugging (same as above, but not paralized)
             all_marginal_dat = [GCM._compute_marginals_IO_HMM(click_mat[i, :],
-                                            parameter_dic,
+                                            pred,
                                             list_size,
                                             item_order[i, :],
                                             model_def,
@@ -119,7 +110,7 @@ class GCM:
 
             it += 1
 
-        return var_models, parameter_dic, cond_entropy
+        return var_models, pred, cond_entropy
 
     @staticmethod
     def pos_log_loss(y_true, y_pred):
@@ -207,7 +198,7 @@ class GCM:
             model = var_models[var_name]
 
             # Note that since we first double the number of rows, division by 2 to always results in a natural number
-            pred[var_name] = model.predict_proba(X[:(int)(X.shape[0]/2), :]).flatten()
+            pred[var_name] = model.predict(X[:(int)(X.shape[0]/2), :]).flatten()
 
         return pred
 
