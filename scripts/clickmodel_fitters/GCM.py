@@ -200,6 +200,9 @@ class GCM:
             # Note that since we first double the number of rows, division by 2 to always results in a natural number
             pred[var_name] = model.predict(X[:(int)(X.shape[0]/2), :]).flatten()
 
+            # Replace possible NaN-values by 0s
+            pred[var_name] = np.nan_to_num(pred[var_name], nan=0)
+
         return pred
 
     @staticmethod
@@ -289,10 +292,6 @@ class GCM:
     def _get_trans_mat(md, vars_dic, item_order, i):
         # Initialize the M matrices:
         trans_matrices = []
-        # expected_sums = np.zeros(md.no_states)
-        # expected_sums[md.click_state] = 1
-        # expected_sums[md.skip_state] = 1
-        cur_param = 1
 
         # Just to ensure it is a transition matrix, only the click state (= initial state) is omitted
         for t in range(md.list_size):
@@ -304,9 +303,12 @@ class GCM:
                     cur_param = vars_dic[var_name][item_order[t]]
                 elif md.var_type[var_name] == 'session':
                     cur_param = vars_dic[var_name][i]
-                elif md.var_type[var_name] == 'pos':
-                    cur_param = vars_dic[var_name][t * md.list_size:((t +1 ) * md.list_size)]\
-                        .reshape((md.list_size, md.list_size))# This is always a list_size**2 matrix!
+                elif md.var_type[var_name] == 'state':
+                    cur_param = vars_dic[var_name].reshape((md.no_states, md.no_states)).T
+                elif md.var_type[var_name] == "pos":
+                    size_statespace = md.no_states ** 2
+                    cur_param = vars_dic[var_name][size_statespace * t: size_statespace * (t+1)]\
+                        .reshape((md.no_states, md.no_states))
                 else:
                     raise KeyError("Parameter type " + str(md.var_type[var_name]) +
                                    " is not supported. Supported types: 'item', 'session' and 'pos'")
@@ -326,8 +328,21 @@ class GCM:
             # As final step, absorb everything in the absorbing state
             # trans_mat[:, md.no_states - 1] = 1 - expected_sums
 
+            row_sums = np.sum(trans_mat, axis=1)
+
+            # Check if less than 1
+            try:
+                np.testing.assert_array_less(row_sums, np.ones(md.no_states))
+            except AssertionError as e:
+                raise ValueError("Probabilities in transition matrix at time: " + str(t) + ", session: " + str(i) +
+                                 ", exceed one. Assertion error message: " + str(e))
+
+            for i in range(md.no_states):
+                trans_mat[md.absorbing_state[i]] = 1 - row_sums[i]
+
             # Normalize (to avoid small errors):
-            trans_mat = trans_mat * np.tile(1/np.sum(trans_mat, axis=1), (md.no_states, 1)).T
+            # trans_mat = trans_mat * np.tile(1/np.sum(trans_mat, axis=1), (md.no_states, 1)).T
+            # trans_mat = np.nan_to_num(trans_mat, nan=0) # Replace nan's by 0
 
             trans_mat = trans_mat.T
             trans_matrices.append(trans_mat)

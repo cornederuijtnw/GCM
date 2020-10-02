@@ -37,8 +37,8 @@ def alt_softmax(x):
 
 
 def gamma_initializer(shape, dtype=None):
-    return K.constant(np.tril(np.ones(shape)))
-    #return K.constant(np.ones(shape))
+    return K.constant(np.vstack((np.zeros(shape[0]).reshape(1, -1),
+                                 np.tril(np.ones((shape - np.array([1, 0])).astype(int))))))
 
 
 if __name__ == "__main__":
@@ -64,12 +64,13 @@ if __name__ == "__main__":
     # Its the shape**2, as we flatten the square matrix.
     model_gamma = Sequential()
     # First compute the kernel
-    model_gamma.add(Dense(var_dic['gamma'].shape[1], use_bias=False, activation=alt_softmax, kernel_initializer=gamma_initializer))
+    model_gamma.add(Dense(var_dic['gamma'].shape[1], use_bias=False, activation=alt_softmax,
+                          kernel_initializer=gamma_initializer))
                          # kernel_constraint=LowerDiagWeight, kernel_initializer=gamma_initializer))
     model_gamma.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
 
     model_tau = Sequential()
-    model_tau.add(Dense(1, input_dim=var_dic['tau'].shape[1], activation=None, use_bias=False,
+    model_tau.add(Dense(var_dic['tau'].shape[1], input_dim=var_dic['tau'].shape[1], activation=None, use_bias=False,
                         kernel_initializer=Identity(), trainable=False))
     model_tau.compile('rmsprop', 'binary_crossentropy')  # No trainable weights, so doesn't really matter
 

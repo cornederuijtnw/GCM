@@ -46,13 +46,15 @@ if __name__ == "__main__":
                                         .sort_values()
                                         .unique())
 
-    pos_feature_mat_tau = np.vstack([np.hstack((np.zeros((model_def.list_size, k)),
-               np.hstack((np.ones(k), np.zeros(model_def.list_size - k))).reshape(-1, 1),
-               np.zeros((model_def.list_size, model_def.list_size - k - 1)))).flatten()
-        for k in range(1, model_def.list_size)])  # so dimension in de order of list_size**3
+    pos_feature_mat_tau_lst = []
 
-    pos_feature_gamma = np.eye(model_def.list_size, model_def.list_size)
-    #pos_feature_gamma = np.triu(np.ones((model_def.list_size, model_def.list_size )), 1)
+    pos_feature_mat_tau = np.vstack([np.hstack((np.zeros((model_def.list_size + 1, k1)),
+                np.hstack((np.ones(k1), np.zeros(model_def.list_size - k1 + 1))).reshape(-1, 1),
+                np.zeros((model_def.list_size + 1, model_def.list_size - k1)))).flatten()
+     for k1 in range(1, model_def.list_size+1)])
+
+    pos_feature_gamma = np.eye(model_def.list_size+1, model_def.list_size + 1)
+    pos_feature_gamma[:, 0] = 0
 
     var_dic = {'phi_A': item_feature_mat_A, 'gamma': pos_feature_gamma, 'tau': pos_feature_mat_tau}
 
@@ -66,20 +68,3 @@ if __name__ == "__main__":
 
     click_mat.to_parquet("./data/small_example/click_mat.parquet.gzip", compression="gzip")
     item_pos_mat.to_parquet("./data/small_example/item_pos.parquet.gzip", compression="gzip")
-
-    # gamma_feature_mat = np.ones((sessions, 1))
-    #
-    # model_phi_A = Sequential()
-    # model_phi_A.add(Dense(1, input_dim=item_feature_mat_A.shape[1], activation='sigmoid', use_bias=False))
-    # model_phi_A.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
-    #
-    # model_phi_S = Sequential()
-    # model_phi_S.add(Dense(1, input_dim=item_feature_mat_S.shape[1], activation='sigmoid', use_bias=False))
-    # model_phi_S.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
-    #
-    # model_gamma = Sequential()
-    # model_gamma.add(Dense(1, input_dim=gamma_feature_mat.shape[1], activation='sigmoid', use_bias=False))
-    # model_gamma.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
-    #
-    # var_dic = {'phi_A': item_feature_mat_A, 'phi_S': item_feature_mat_S, 'gamma': gamma_feature_mat}
-    # var_models = {'phi_A': model_phi_A, 'phi_S': model_phi_S, 'gamma': model_gamma}

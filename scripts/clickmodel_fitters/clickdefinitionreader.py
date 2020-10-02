@@ -12,18 +12,19 @@ class ClickDefinition:
         """
         self._loc = loc
         self._act_matrices = {}
-        self._param_size = {}
+        # self._param_size = {}
         self._var_type = {}
 
         with open(self._loc) as f:
             definitions = yaml.load(f)
 
             self._click_state = definitions['click_state']
-            self._absorbing_state = definitions['absorbing_state']
             self._list_size = definitions['list_size']
             self._no_states = definitions['no_states']
             self._batch_size = definitions['batch_size']
             self._no_items = definitions['item_size']
+            self._absorbing_state = self._init_absorbing_state(definitions['absorbing_state'])
+            # self._absorbing_state = definitions['absorbing_state']
 
             if 'skip_state' in definitions:
                 self._non_click_state = definitions['skip_state']
@@ -49,12 +50,12 @@ class ClickDefinition:
         """
         return self._batch_size
 
-    @property
-    def param_shapes(self):
-        """
-        Dictionary of shapes, one for each variable in the click model
-        """
-        return self._param_size
+    # @property
+    # def param_shapes(self):
+    #     """
+    #     Dictionary of shapes, one for each variable in the click model
+    #     """
+    #     return self._param_size
 
     @property
     def var_type(self):
@@ -112,6 +113,17 @@ class ClickDefinition:
         """
         return self._t0_fixed
 
+    @property
+    def absorbing_state(self):
+        return self._absorbing_state
+
+    def _init_absorbing_state(self, abs_state_lst):
+        abs_state_mat = []
+
+        for row_val in abs_state_lst:
+            abs_state_mat.append(tuple(row_val))
+        return abs_state_mat
+
     def _init_act_matrices(self, act_mat_dic):
         # Initializes the activation matrices, parameters sizes and variable types
         for key, d in act_mat_dic.items():
@@ -122,7 +134,7 @@ class ClickDefinition:
             self._act_matrices[key] = {'pos_mat': self._init_act_mat(pos_mat),
                                        'neg_mat': self._init_act_mat(neg_mat),
                                        'fixed_mat': self._init_act_mat(fixed_mat)}
-            self._param_size[key] = d['param_size']
+            #self._param_size[key] = d['param_size']
             self._var_type[key] = d['var_type']
 
     def _get_act_mat(self, d, matrix_type):
