@@ -139,11 +139,14 @@ class GCM:
         weight_index_mat = GCM._get_weight_index_matrix(list_size, no_states)
         click_prob = None
 
+        # TODO: Paralize?
         for i in range(len(all_marginal_dat)):
+            cur_click_prob = (all_marginal_dat[i]['zeta_vec'] *
+                              np.eye(model_def.no_states, model_def.list_size + 1)).sum(-1)
             if i == 0:
-                click_prob = all_marginal_dat[i]['zeta_vec'][model_def.click_state, 1:]
+                click_prob = cur_click_prob
             else:
-                click_prob = np.vstack((click_prob, all_marginal_dat[i]['zeta_vec'][model_def.click_state, 1:]))
+                click_prob = np.vstack((click_prob, cur_click_prob))
             weight_dic = all_marginal_dat[i]['reg_out']
             for var_key, feat_type in var_type_dic.items():
                 weights_per_rank = (weight_dic[(var_key, i)].todense().T @ weight_index_mat)
@@ -172,6 +175,40 @@ class GCM:
                     raise NotImplementedError("Only 'session' and 'item' variables are currently implemented")
 
         return [weight_vec_dic, click_prob]
+
+    @staticmethod
+    def _get_param_weights_in_session(param_dic):
+        cur_list_pos = param_dic['cur_list_pos']
+        marginal_dic = param_dic['marginal_dic']
+        model_def = param_dic['model_def']
+        session_count = param_dic['session_count']
+        cur_session = param_dic['cur_session']
+
+        click_prob = (marginal_dic['zeta_vec'] *
+                          np.eye(model_def.no_states, model_def.list_size + 1)).sum(-1)
+
+        weight_vectors = {}
+        weight_dic = marginal_dic['reg_out']
+
+        for var_key, feat_type in model_def.var_type.items():
+            if feat_type == "item":
+                # First column are the positives items, second are the negatives
+                weight_vectors[var_key] = np.hstack((np.put(np.zeros(model_def.no_items), cur_list_pos,
+                                                            weight_dic[var_key][0]).reshape(-1, 1),
+                                                     np.put(np.zeros(model_def.no_items), cur_list_pos,
+                                                            weight_dic[var_key][1]).reshape(-1, 1)))
+
+            elif feat_type == "session":
+                weight_vectors[var_key] = np.hstack((np.put(np.zeros(session_count), cur_session,
+                                                            weight_dic[var_key][0].sum()),
+                                                     np.put(np.zeros(session_count), cur_session,
+                                                            weight_dic[var_key][1].sum())))
+
+            elif feat_type == "state":
+                weight_vectors[var_key]
+
+            else:
+                raise NotImplementedError("Only 'session' and 'item' variables are currently implemented")
 
     @staticmethod
     def _get_weight_index_matrix(list_size, no_states):
@@ -211,7 +248,7 @@ class GCM:
         callback = EarlyStopping(monitor='loss', patience=5)
 
         for var_name, k_model in var_models.items():
-
+            # TODO: check if the positive/negative w-values are now properly ordered wrt X
             X = np.vstack((var_dic[var_name], var_dic[var_name]))
             Y = np.asarray(weight_dic[var_name]).flatten(order='F')  # column-wise flatten (row-wise is the default)
             model = var_models[var_name]
@@ -222,25 +259,82 @@ class GCM:
         return var_models
 
     @staticmethod
-    def _compute_marginals_IO_HMM(click_vec, var_dic, list_size, item_order, model_def, i):
+    def _compute_marginals_IO_HMM(click_vec, var_dic, list_size, item_order, model_def, i, session_count):
         # Determine the sessions weights for clicks and skips
         H_mat, zeta_vec = GCM._compute_IO_HMM_est(click_vec, var_dic, item_order, list_size, model_def, i)
 
-        ncs = model_def.skip_state
-        cs = model_def.click_state
-        session_weights = {}
+        # ncs = model_def.skip_state
+        # cs = model_def.click_state
+        marginals = {}
 
-        for key, act_value in model_def.act_matrices.items():
+        for var_key, act_value in model_def.act_matrices.items():
             # Negative H weights are just to indicate that we have 1-theta instead of theta.
             # Easy way of transmitting that information
             W_plus = H_mat * np.tile(act_value['pos_mat'], (model_def.list_size, 1, 1)).transpose((2, 1, 0))
             W_minus = H_mat * -np.tile(act_value['neg_mat'], (model_def.list_size, 1, 1)).transpose((2, 1, 0))
 
+            if model_def.var_type[var_key] == "item":
+                # First column are the positives items, second are the negatives
+                marginals[var_key] = np.hstack((np.put(np.zeros(model_def.no_items), item_order,
+                                                            np.sum(W_plus, axis=(0, 1))).reshape(-1, 1),
+                                                     np.put(np.zeros(model_def.no_items), item_order,
+                                                            np.sum(W_minus, axis=(0, 1)).reshape(-1, 1))))
+
+            elif model_def.var_type[var_key] == "session":
+                marginals[var_key] = np.hstack((np.put(np.zeros(session_count), i, np.sum(W_plus),
+                                                             np.put(np.zeros(session_count), i, np.sum(W_minus)))))
+            elif model_def.var_type[var_key] == "state": # TODO: Check, is this axis correct???, is the way the matrix is flatten correct?
+                marginals[var_key] = np.hstack((np.sum(W_plus, axis=2).flatten().reshape(-1, 1),
+                                                np.sum(W_minus, axis=2).flatten().reshape(-1, 1)))
+            elif model_def.var_type[var_key] == "pos": #TODO: implement
+
+
+            W_vec_plus = np.sum(W_plus, axis=(0, 1))
+            W_vec_minus = np.sum(W_minus, axis=(0, 1))
+
+            # cur_list_pos = param_dic['cur_list_pos']
+            # marginal_dic = param_dic['marginal_dic']
+            # model_def = param_dic['model_def']
+            # session_count = param_dic['session_count']
+            # cur_session = param_dic['cur_session']
+            #
+            # click_prob = (marginal_dic['zeta_vec'] *
+            #               np.eye(model_def.no_states, model_def.list_size + 1)).sum(-1)
+            #
+            # weight_vectors = {}
+            # weight_dic = marginal_dic['reg_out']
+            #
+            # for var_key, feat_type in model_def.var_type.items():
+            #     if feat_type == "item":
+            #         # First column are the positives items, second are the negatives
+            #         weight_vectors[var_key] = np.hstack((np.put(np.zeros(model_def.no_items), cur_list_pos,
+            #                                                     weight_dic[var_key][0]).reshape(-1, 1),
+            #                                              np.put(np.zeros(model_def.no_items), cur_list_pos,
+            #                                                     weight_dic[var_key][1]).reshape(-1, 1)))
+            #
+            #     elif feat_type == "session":
+            #         weight_vectors[var_key] = np.hstack((np.put(np.zeros(session_count), cur_session,
+            #                                                     weight_dic[var_key][0].sum()),
+            #                                              np.put(np.zeros(session_count), cur_session,
+            #                                                     weight_dic[var_key][1].sum())))
+            #
+            #     elif feat_type == "state":
+            #         weight_vectors[var_key]
+            #
+            #     else:
+            #         raise NotImplementedError("Only 'session' and 'item' variables are currently implemented")
+
+
+
+
+
+
+
             # Only keep the click and non-click states and to vector representation:
-            W_vec_plus = np.tensordot(np.transpose(W_plus[:, [ncs, cs], :], (2, 0, 1)),
-                                      np.ones(2), axes=1).flatten()
-            W_vec_minus = np.tensordot(np.transpose(W_minus[:, [ncs, cs], :], (2, 0, 1)),
-                                       np.ones(2), axes=1).flatten()
+            # W_vec_plus = np.tensordot(np.transpose(W_plus[:, [ncs, cs], :], (2, 0, 1)),
+            #                           np.ones(2), axes=1).flatten()
+            # W_vec_minus = np.tensordot(np.transpose(W_minus[:, [ncs, cs], :], (2, 0, 1)),
+            #                            np.ones(2), axes=1).flatten()
 
             session_weights[(key, i)] = coo_matrix(np.hstack((W_vec_plus.reshape((W_vec_plus.shape[0], 1)),
                                                               W_vec_minus.reshape((W_vec_minus.shape[0], 1)))))
@@ -259,12 +353,16 @@ class GCM:
         A = np.zeros((model_def.no_states, list_size + 1))
         H = np.zeros((model_def.no_states, model_def.no_states, list_size))
         zeta = np.zeros((model_def.no_states, list_size + 1))
-        click_states = np.zeros(model_def.no_states)
+
+        if model_def.click_state == 't':
+            click_states = np.eye(model_def.no_states, model_def.list_size + 1)
+        else:  # constant over time
+            click_states = np.zeros((model_def.no_states, model_def.list_size + 1))
+            click_states = click_states[model_def.click_state, :] = 1
 
         # States where there is a click by definition:
-        click_states[model_def.click_state] = 1
-        B[:, list_size] = click_vec[list_size - 1] * click_states + (1 - click_vec[list_size - 1]) * (
-                1 - click_states)
+        B[:, list_size] = click_vec[list_size - 1] * click_states[:, list_size] + (1 - click_vec[list_size - 1]) * (
+                1 - click_states[:, list_size])
         A[x_init_state, 0] = 1  # We assume that at time t=0 there is a click
         zeta[x_init_state, 0] = 1
         for t in range(1, list_size+1):
@@ -273,18 +371,18 @@ class GCM:
             zeta[:, t] = zeta[:, t] / np.sum(zeta[:, t])
 
             # Note that the click vector itself does not have the 0 state, so the index is one behind
-            A[:, t] = click_vec[t-1] * click_states * np.dot(trans_matrices[t - 1], A[:, t - 1].T) + \
-                      (1 - click_vec[t-1]) * (1 - click_states) * np.dot(trans_matrices[t - 1], A[:, t - 1].T)
+            A[:, t] = click_vec[t-1] * click_states[:, t] * np.dot(trans_matrices[t - 1], A[:, t - 1].T) + \
+                      (1 - click_vec[t-1]) * (1 - click_states[:, t]) * np.dot(trans_matrices[t - 1], A[:, t - 1].T)
         for t in reversed(range(1, list_size+1)):
             H[:, :, t - 1] = np.outer(B[:, t], A[:, t - 1]) / np.sum(A[:, list_size - 1]) * trans_matrices[t - 1]
 
-            # Just as due to some numerical unstability the sum might not always be 1:
+            # Just as due to some numerical instability the sum might not always be 1:
             H[:, :, t - 1] = H[:, :, t - 1] / np.sum(H[:, :, t - 1])
             if t > 1:
-                B[:, t - 1] = click_vec[t - 2] * click_states * np.dot(trans_matrices[t - 1].T, B[:, t].T) + \
-                              (1 - click_vec[t - 2]) * (1 - click_states) * np.dot(trans_matrices[t - 1].T, B[:, t].T)
+                B[:, t - 1] = click_vec[t - 2] * click_states[:, t-1] * np.dot(trans_matrices[t - 1].T, B[:, t].T) + \
+                              (1 - click_vec[t - 2]) * (1 - click_states[:, t-1]) * np.dot(trans_matrices[t - 1].T, B[:, t].T)
             else:  # We assume state 0 is clicked
-                B[:, t-1] = click_states * np.dot(trans_matrices[t - 1].T, B[:, t].T)
+                B[:, t-1] = click_states[:, t-1] * np.dot(trans_matrices[t - 1].T, B[:, t].T)
 
         return H, zeta
 

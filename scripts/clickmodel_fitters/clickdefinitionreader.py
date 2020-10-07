@@ -19,6 +19,7 @@ class ClickDefinition:
             definitions = yaml.load(f)
 
             self._click_state = definitions['click_state']
+            self._init_state = definitions['init_state']
             self._list_size = definitions['list_size']
             self._no_states = definitions['no_states']
             self._batch_size = definitions['batch_size']
@@ -83,7 +84,7 @@ class ClickDefinition:
         """
         Initial state of the model during the start of each session (always equals the click state)
         """
-        return self._click_state
+        return self._init_state
 
     @property
     def list_size(self):

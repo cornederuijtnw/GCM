@@ -15,6 +15,7 @@ absorbing_state:
   - [ 10,10]
 
 no_states: 11 # 0 list position
+init_state: 0
 list_size: 10
 batch_size: 500
 item_size: 10
