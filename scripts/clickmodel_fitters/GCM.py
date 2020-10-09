@@ -70,13 +70,18 @@ class GCM:
 
             VP.print("Running E-step ...", verbose)
 
+            param_dic_list = [{'click_vec': click_mat[i, :],
+                               'cur_list_pos': item_order[i, :],
+                               'var_dic': pred,
+                               'item_order': item_order[i, :],
+                               'model_def': model_def,
+                               'i': i,
+                               'session_count': no_sessions}
+                              for i in range(no_sessions)]
+
             # Use for debugging (same as above, but not paralized)
-            all_marginal_dat = [GCM._compute_marginals_IO_HMM(click_mat[i, :],
-                                            pred,
-                                            list_size,
-                                            item_order[i, :],
-                                            model_def,
-                                            i) for i in np.arange(no_sessions)]
+            all_marginal_dat = [GCM._compute_marginals_IO_HMM(param_dic_list[i])
+                                for i in np.arange(no_sessions)]
 
             # Compute all the marginal probabilities
             # TODO: USE MAP INSTEAD, OTHERWISE WON'T BE OF MUCH USE...
@@ -92,11 +97,7 @@ class GCM:
             # pool.join()
 
             # Format the marginal probabilities as weights
-            weight_dic, click_prob = GCM._format_weights_and_covariates(all_marginal_dat,
-                                                            var_type_dic,
-                                                            item_order,
-                                                            list_size,
-                                                            model_def)
+            weight_dic, click_prob = GCM._format_weights_and_covariates(all_marginal_dat, model_def)
 
             # # Compute entropy using the zeta vector (state probability vector)
             cur_entropy = log_loss(click_mat.flatten(), click_prob.flatten())
@@ -131,50 +132,23 @@ class GCM:
                          * Kback.abs(y_true_f) * Kback.log(1. - y_pred_f))
 
     @staticmethod
-    def _format_weights_and_covariates(all_marginal_dat, var_type_dic, item_order, list_size, model_def):
-        # Converts the marginals (weights and zeta vector) to a single weight vector, which can be used to model y_real.
-        no_states = model_def.no_states
-        item_size = model_def.no_items
-        weight_vec_dic = {}
-        weight_index_mat = GCM._get_weight_index_matrix(list_size, no_states)
-        click_prob = None
+    def _format_weights_and_covariates(all_marginal_dat, model_def):
+        weight_dic = {}
+        zeta_lst = []
+        i = 0
 
-        # TODO: Paralize?
-        for i in range(len(all_marginal_dat)):
-            cur_click_prob = (all_marginal_dat[i]['zeta_vec'] *
-                              np.eye(model_def.no_states, model_def.list_size + 1)).sum(-1)
-            if i == 0:
-                click_prob = cur_click_prob
-            else:
-                click_prob = np.vstack((click_prob, cur_click_prob))
-            weight_dic = all_marginal_dat[i]['reg_out']
-            for var_key, feat_type in var_type_dic.items():
-                weights_per_rank = (weight_dic[(var_key, i)].todense().T @ weight_index_mat)
-
-                # First sum over the different states
-                if feat_type == "item":
-                    if var_key not in weight_vec_dic:
-                        weight_vec_dic[var_key] = np.zeros((item_size, 2))
-
-                    # This should also ensure that the items are properly ordered.
-                    adj_pos = np.hstack((item_order[i] * 2,
-                                        item_order[i] * 2 + 1))
-
-                    add_matrix = np.zeros((item_size, 2))
-                    np.put(add_matrix, adj_pos, weights_per_rank.flatten())
-
-                    weight_vec_dic[var_key] += (add_matrix/len(all_marginal_dat))  # Such that we have the average
-
-                elif feat_type == "session":
-                    weight_sums = np.sum(weights_per_rank, axis=1).T/list_size  # Column averages
-                    if var_key not in weight_vec_dic:
-                        weight_vec_dic[var_key] = weight_sums
-                    else:
-                        weight_vec_dic[var_key] = np.vstack((weight_vec_dic[var_key], weight_sums))
+        for ses_marginal in all_marginal_dat:
+            zeta_lst.append((ses_marginal['zeta_vec'] * model_def.click_states).sum(axis=0))
+            for var_key in model_def.var_type.keys():
+                if var_key not in weight_dic:
+                    weight_dic[var_key] = ses_marginal['reg_out'][var_key]
                 else:
-                    raise NotImplementedError("Only 'session' and 'item' variables are currently implemented")
+                    weight_dic[var_key] += ses_marginal['reg_out'][var_key]
 
-        return [weight_vec_dic, click_prob]
+            i += 1
+
+        zeta_mat = np.vstack(zeta_lst)
+        return weight_dic, zeta_mat[:, 1:]  # Remove time 0
 
     @staticmethod
     def _get_param_weights_in_session(param_dic):
@@ -244,13 +218,14 @@ class GCM:
 
     @staticmethod
     def _optimize_params(var_models, weight_dic, var_dic, verbose):
+        # TODO: 1) ADD a variable such that I can change the dimension of the output Y (this can also be a matrix)
+        # TODO: 2) Check the shape of gamma, should this matrix be transposed? Doing weight_dic[var_name].T.reshape(22,11) I believe should do the trick at least in terms of positive/negative order
         # Procedure that finds the next parameters, based on the current E-step
         callback = EarlyStopping(monitor='loss', patience=5)
 
         for var_name, k_model in var_models.items():
-            # TODO: check if the positive/negative w-values are now properly ordered wrt X
             X = np.vstack((var_dic[var_name], var_dic[var_name]))
-            Y = np.asarray(weight_dic[var_name]).flatten(order='F')  # column-wise flatten (row-wise is the default)
+            Y = weight_dic[var_name].flatten(order='F')  # column-wise flatten (row-wise is the default)
             model = var_models[var_name]
 
             model.fit(X, Y, batch_size=Y.shape[0], epochs=100, verbose=verbose, callbacks=[callback])
@@ -259,9 +234,16 @@ class GCM:
         return var_models
 
     @staticmethod
-    def _compute_marginals_IO_HMM(click_vec, var_dic, list_size, item_order, model_def, i, session_count):
+    def _compute_marginals_IO_HMM(param_dic):
+        click_vec = param_dic['click_vec']
+        var_dic = param_dic['var_dic']
+        item_order = param_dic['item_order']
+        model_def = param_dic['model_def']
+        i = param_dic['i']
+        session_count = param_dic['session_count']
+
         # Determine the sessions weights for clicks and skips
-        H_mat, zeta_vec = GCM._compute_IO_HMM_est(click_vec, var_dic, item_order, list_size, model_def, i)
+        H_mat, zeta_vec = GCM._compute_IO_HMM_est(click_vec, var_dic, item_order, model_def, i)
 
         # ncs = model_def.skip_state
         # cs = model_def.click_state
@@ -275,77 +257,36 @@ class GCM:
 
             if model_def.var_type[var_key] == "item":
                 # First column are the positives items, second are the negatives
-                marginals[var_key] = np.hstack((np.put(np.zeros(model_def.no_items), item_order,
-                                                            np.sum(W_plus, axis=(0, 1))).reshape(-1, 1),
-                                                     np.put(np.zeros(model_def.no_items), item_order,
-                                                            np.sum(W_minus, axis=(0, 1)).reshape(-1, 1))))
+                cur_vec_plus = np.zeros(model_def.no_items)
+                cur_vec_minus = np.zeros(model_def.no_items)
+                np.put(cur_vec_plus, item_order, np.sum(W_plus, axis=(0, 1)))
+                np.put(cur_vec_minus, item_order, np.sum(W_plus, axis=(0, 1)))
+
+                marginals[var_key] = np.hstack((cur_vec_plus.reshape(-1, 1), cur_vec_minus.reshape(-1, 1)))
 
             elif model_def.var_type[var_key] == "session":
-                marginals[var_key] = np.hstack((np.put(np.zeros(session_count), i, np.sum(W_plus),
-                                                             np.put(np.zeros(session_count), i, np.sum(W_minus)))))
+                cur_vec_plus = np.zeros(session_count)
+                cur_vec_minus = np.zeros(session_count)
+                np.put(cur_vec_plus, i, np.sum(W_plus)).reshape(-1, 1)
+                np.put(cur_vec_minus, i, np.sum(W_minus)).reshape(-1, 1)
+
+                marginals[var_key] = np.hstack((cur_vec_plus.reshape(-1, 1), cur_vec_minus.reshape(-1, 1)))
+
             elif model_def.var_type[var_key] == "state": # TODO: Check, is this axis correct???, is the way the matrix is flatten correct?
                 marginals[var_key] = np.hstack((np.sum(W_plus, axis=2).flatten().reshape(-1, 1),
                                                 np.sum(W_minus, axis=2).flatten().reshape(-1, 1)))
-            elif model_def.var_type[var_key] == "pos": #TODO: implement
+            elif model_def.var_type[var_key] == "pos":
+                marginals[var_key] = np.hstack((np.sum(W_plus, axis=(0, 1)).reshape(-1, 1),
+                                                np.sum(W_minus, axis=(0, 1)).reshape(-1, 1)))
 
-
-            W_vec_plus = np.sum(W_plus, axis=(0, 1))
-            W_vec_minus = np.sum(W_minus, axis=(0, 1))
-
-            # cur_list_pos = param_dic['cur_list_pos']
-            # marginal_dic = param_dic['marginal_dic']
-            # model_def = param_dic['model_def']
-            # session_count = param_dic['session_count']
-            # cur_session = param_dic['cur_session']
-            #
-            # click_prob = (marginal_dic['zeta_vec'] *
-            #               np.eye(model_def.no_states, model_def.list_size + 1)).sum(-1)
-            #
-            # weight_vectors = {}
-            # weight_dic = marginal_dic['reg_out']
-            #
-            # for var_key, feat_type in model_def.var_type.items():
-            #     if feat_type == "item":
-            #         # First column are the positives items, second are the negatives
-            #         weight_vectors[var_key] = np.hstack((np.put(np.zeros(model_def.no_items), cur_list_pos,
-            #                                                     weight_dic[var_key][0]).reshape(-1, 1),
-            #                                              np.put(np.zeros(model_def.no_items), cur_list_pos,
-            #                                                     weight_dic[var_key][1]).reshape(-1, 1)))
-            #
-            #     elif feat_type == "session":
-            #         weight_vectors[var_key] = np.hstack((np.put(np.zeros(session_count), cur_session,
-            #                                                     weight_dic[var_key][0].sum()),
-            #                                              np.put(np.zeros(session_count), cur_session,
-            #                                                     weight_dic[var_key][1].sum())))
-            #
-            #     elif feat_type == "state":
-            #         weight_vectors[var_key]
-            #
-            #     else:
-            #         raise NotImplementedError("Only 'session' and 'item' variables are currently implemented")
-
-
-
-
-
-
-
-            # Only keep the click and non-click states and to vector representation:
-            # W_vec_plus = np.tensordot(np.transpose(W_plus[:, [ncs, cs], :], (2, 0, 1)),
-            #                           np.ones(2), axes=1).flatten()
-            # W_vec_minus = np.tensordot(np.transpose(W_minus[:, [ncs, cs], :], (2, 0, 1)),
-            #                            np.ones(2), axes=1).flatten()
-
-            session_weights[(key, i)] = coo_matrix(np.hstack((W_vec_plus.reshape((W_vec_plus.shape[0], 1)),
-                                                              W_vec_minus.reshape((W_vec_minus.shape[0], 1)))))
-
-        return {'reg_out': session_weights, 'zeta_vec': zeta_vec}
+        return {'reg_out': marginals, 'zeta_vec': zeta_vec}
 
     @staticmethod
-    def _compute_IO_HMM_est(click_vec, var_dic, item_order, list_size, model_def, i):
+    def _compute_IO_HMM_est(click_vec, var_dic, item_order, model_def, i):
         # Determine all sessions weights and the state probabilities (zeta vector)
         trans_matrices = GCM._get_trans_mat(model_def, var_dic, item_order, i)
         x_init_state = model_def.init_state
+        list_size = model_def.list_size
 
         # The forward-backward algorithm:
         # at t=0:
@@ -354,11 +295,7 @@ class GCM:
         H = np.zeros((model_def.no_states, model_def.no_states, list_size))
         zeta = np.zeros((model_def.no_states, list_size + 1))
 
-        if model_def.click_state == 't':
-            click_states = np.eye(model_def.no_states, model_def.list_size + 1)
-        else:  # constant over time
-            click_states = np.zeros((model_def.no_states, model_def.list_size + 1))
-            click_states = click_states[model_def.click_state, :] = 1
+        click_states = model_def.click_states
 
         # States where there is a click by definition:
         B[:, list_size] = click_vec[list_size - 1] * click_states[:, list_size] + (1 - click_vec[list_size - 1]) * (

@@ -18,7 +18,7 @@ class ClickDefinition:
         with open(self._loc) as f:
             definitions = yaml.load(f)
 
-            self._click_state = definitions['click_state']
+            self._click_states = self._init_click_states(definitions['click_states'])
             self._init_state = definitions['init_state']
             self._list_size = definitions['list_size']
             self._no_states = definitions['no_states']
@@ -66,11 +66,11 @@ class ClickDefinition:
         return self._var_type
 
     @property
-    def click_state(self):
+    def click_states(self):
         """
         The state at which an item is clicked
         """
-        return self._click_state
+        return self._click_states
 
     @property
     def skip_state(self):
@@ -117,6 +117,13 @@ class ClickDefinition:
     @property
     def absorbing_state(self):
         return self._absorbing_state
+
+    def _init_click_states(self, click_state_lst):
+        click_state_mat_lst = []
+        for row_val in click_state_lst:
+            click_state_mat_lst.append(np.array(row_val[1]))  # TODO: This assumes the rows are ordered
+
+        return np.vstack(click_state_mat_lst)
 
     def _init_absorbing_state(self, abs_state_lst):
         abs_state_mat = []
