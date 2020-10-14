@@ -19,15 +19,22 @@ from tensorflow.keras.layers import Activation
 import tensorflow as tf
 
 
-# class LowerDiagWeight(Constraint):
-#     """Constrains the weights to be on the lower diagonal.
-#     """
-#     def __call__(self, w):
-#         N = K.int_shape(w)[-1]
-#         m = K.constant(np.tril(np.ones((N, N))))
-#         w *= m
-#
-#         return w
+class LowerDiagWeight(Constraint):
+    """Constrains the weights to be on the lower diagonal.
+    """
+    def __init(self, dummy=1):
+        self._dummy = dummy
+
+    def __call__(self, w):
+        N = K.int_shape(w)[-1]
+        m = K.constant(np.tril(np.ones((N, N))))
+        w = w * m
+
+        return w
+
+    def get_config(self):
+        return {'dummy': self._dummy}
+
 
 def alt_softmax(x):
     #return x
@@ -65,7 +72,7 @@ if __name__ == "__main__":
     model_gamma = Sequential()
     # First compute the kernel
     model_gamma.add(Dense(var_dic['gamma'].shape[1], use_bias=False, activation=alt_softmax,
-                          kernel_initializer=gamma_initializer))
+                          kernel_initializer=gamma_initializer, kernel_constraint=LowerDiagWeight()))
                          # kernel_constraint=LowerDiagWeight, kernel_initializer=gamma_initializer))
     model_gamma.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
 

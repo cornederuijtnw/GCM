@@ -218,17 +218,22 @@ class GCM:
 
     @staticmethod
     def _optimize_params(var_models, weight_dic, var_dic, verbose):
-        # TODO: 1) ADD a variable such that I can change the dimension of the output Y (this can also be a matrix)
-        # TODO: 2) Check the shape of gamma, should this matrix be transposed? Doing weight_dic[var_name].T.reshape(22,11) I believe should do the trick at least in terms of positive/negative order
         # Procedure that finds the next parameters, based on the current E-step
         callback = EarlyStopping(monitor='loss', patience=5)
 
         for var_name, k_model in var_models.items():
             X = np.vstack((var_dic[var_name], var_dic[var_name]))
-            Y = weight_dic[var_name].flatten(order='F')  # column-wise flatten (row-wise is the default)
             model = var_models[var_name]
+            output_dim = model.layers[len(model.layers) - 1].output.shape[1]
+            trainable = len(model.trainable_weights) > 0
 
-            model.fit(X, Y, batch_size=Y.shape[0], epochs=100, verbose=verbose, callbacks=[callback])
+            if trainable:
+                if output_dim == 1:
+                    Y = weight_dic[var_name].flatten(order='F')  # column-wise flatten (row-wise is the default)
+                else:
+                    Y = weight_dic[var_name].T.reshape((X.shape[0], output_dim))
+
+                model.fit(X, Y, batch_size=Y.shape[0], epochs=100, verbose=verbose, callbacks=[callback])
             var_models[var_name] = model
 
         return var_models
