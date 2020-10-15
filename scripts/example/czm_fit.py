@@ -8,12 +8,60 @@ from keras.optimizers import RMSprop
 
 
 if __name__ == "__main__":
-    yaml_file_loc = "./model_definitions/czmdefinitions.yaml"
-
     click_data = pd.read_csv("./data/small_example/simulation_res_train.csv", index_col=False)
     prod_position = pd.read_csv("./data/small_example/simulation_item_props.csv", index_col=False)
 
-    model_def = ClickDefinition(yaml_file_loc)
+    list_size = 10
+    no_states = 7
+    click_states = np.zeros((no_states + 1, no_states + 1))
+    click_states[:, 3] = 1
+    abs_state = [(i, 6) for i in range(7)]
+    init_state = 3  # Equals the click state
+    batch_size = 500
+    no_items = 10
+
+    var_dic = {
+        'gamma': {
+            'var_type': 'session',
+            'pos_mat': np.vstack((np.zeros((2, no_states)),
+                                  np.array([0, 0, 1, 1, 0, 0, 0]),
+                                  np.array([0, 0, 1, 1, 0, 0, 0]),
+                                  np.zeros((3, no_states)))),
+            'neg_mat': np.vstack((np.zeros((2, no_states)),
+                                  np.array([1, 1, 0, 0, 0, 0, 0]),
+                                  np.array([1, 1, 0, 0, 0, 0, 0]),
+                                  np.zeros((3, no_states)))),
+            'fixed_mat': np.vstack((np.zeros((3, no_states)),
+                                    np.array([0, 0, 0, 0, 1, 1, 0]),
+                                    np.zeros((3, no_states))))
+        },
+        'phi_S': {
+            'var_type': 'item',
+            'pos_mat': np.vstack((np.zeros((3, no_states)),
+                                  np.array([0, 0, 0, 0, 1, 1, 0]),
+                                  np.zeros((3, no_states)))),
+            'neg_mat': np.vstack((np.zeros((3, no_states)),
+                                  np.array([1, 1, 1, 1, 0, 0, 0]),
+                                  np.zeros((3, no_states)))),
+            'fixed_mat': np.vstack((np.zeros((2, no_states)),
+                                    np.array([1, 1, 1, 1, 0, 0, 0]),
+                                    np.zeros((4, no_states))))
+        },
+        'phi_A': {
+            'var_type': 'item',
+            'pos_mat': np.vstack((np.zeros((2, no_states)),
+                                  np.array([0, 1, 0, 1, 0, 0, 0]),
+                                  np.array([0, 1, 0, 1, 0, 1, 0]),
+                                  np.zeros((3, no_states)))),
+            'neg_mat': np.vstack((np.zeros((2, no_states)),
+                                  np.array([1, 0, 1, 0, 0, 0, 0]),
+                                  np.array([1, 0, 1, 0, 1, 0, 0]),
+                                  np.zeros((3, no_states))))
+        }
+    }
+
+    model_def = ClickDefinition(click_states, init_state, list_size, no_states, batch_size, no_items, abs_state,
+                                var_dic)
 
     # Make sure order is correct:
     click_data = click_data.sort_values(['user_id', 'session_count', 'item_order'])

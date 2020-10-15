@@ -6,36 +6,50 @@ class ClickDefinition:
     """
     Class used to initialize the click model using the input YAML file.
     """
-    def __init__(self, loc):
-        """
-        :param loc: Location of the YAML file
-        """
-        self._loc = loc
+    # In the end it was still more convenient to define everything with Python
+    # def __init__(self, loc):
+    #     """
+    #     :param loc: Location of the YAML file
+    #     """
+    #     self._loc = loc
+    #     self._act_matrices = {}
+    #     # self._param_size = {}
+    #     self._var_type = {}
+    #
+    #     with open(self._loc) as f:
+    #         definitions = yaml.load(f)
+    #
+    #         self._click_states = self._init_click_states(definitions['click_states'])
+    #         self._init_state = definitions['init_state']
+    #         self._list_size = definitions['list_size']
+    #         self._no_states = definitions['no_states']
+    #         self._batch_size = definitions['batch_size']
+    #         self._no_items = definitions['item_size']
+    #         self._absorbing_state = self._init_absorbing_state(definitions['absorbing_state'])
+    #         # self._absorbing_state = definitions['absorbing_state']
+    #
+    #         if 'skip_state' in definitions:
+    #             self._non_click_state = definitions['skip_state']
+    #
+    #         if 't0_fixed' in definitions:
+    #             self._t0_fixed = definitions['t0_fixed']
+    #         else:
+    #             self._t0_fixed = {}
+    #
+    #         self._init_act_matrices(definitions['var'])
+
+    def __init__(self, click_states, init_state, list_size, no_states, batch_size, no_items, abs_state, var_dic):
         self._act_matrices = {}
-        # self._param_size = {}
         self._var_type = {}
 
-        with open(self._loc) as f:
-            definitions = yaml.load(f)
-
-            self._click_states = self._init_click_states(definitions['click_states'])
-            self._init_state = definitions['init_state']
-            self._list_size = definitions['list_size']
-            self._no_states = definitions['no_states']
-            self._batch_size = definitions['batch_size']
-            self._no_items = definitions['item_size']
-            self._absorbing_state = self._init_absorbing_state(definitions['absorbing_state'])
-            # self._absorbing_state = definitions['absorbing_state']
-
-            if 'skip_state' in definitions:
-                self._non_click_state = definitions['skip_state']
-
-            if 't0_fixed' in definitions:
-                self._t0_fixed = definitions['t0_fixed']
-            else:
-                self._t0_fixed = {}
-
-            self._init_act_matrices(definitions['var'])
+        self._click_states = click_states
+        self._init_state = init_state
+        self._list_size = list_size
+        self._no_states = no_states
+        self._batch_size = batch_size
+        self._no_items = no_items
+        self._abs_state = abs_state
+        self._init_act_matrices(var_dic)
 
     @property
     def no_items(self):
@@ -72,12 +86,12 @@ class ClickDefinition:
         """
         return self._click_states
 
-    @property
-    def skip_state(self):
-        """
-        The state at which an item is skipped but evaluated
-        """
-        return self._non_click_state
+    # @property
+    # def skip_state(self):
+    #     """
+    #     The state at which an item is skipped but evaluated
+    #     """
+    #     return self._non_click_state
 
     @property
     def init_state(self):
@@ -107,16 +121,16 @@ class ClickDefinition:
         """
         return self._act_matrices
 
-    @property
-    def t0_fixed(self):
-        """
-        A dictionary of parameters being fixed from transition 0 to 1
-        """
-        return self._t0_fixed
-
+    # @property
+    # def t0_fixed(self):
+    #     """
+    #     A dictionary of parameters being fixed from transition 0 to 1
+    #     """
+    #     return self._t0_fixed
+    #
     @property
     def absorbing_state(self):
-        return self._absorbing_state
+        return self._abs_state
 
     def _init_click_states(self, click_state_lst):
         click_state_mat_lst = []
@@ -133,16 +147,17 @@ class ClickDefinition:
         return abs_state_mat
 
     def _init_act_matrices(self, act_mat_dic):
-        # Initializes the activation matrices, parameters sizes and variable types
+        # Initializes the activation matrices
         for key, d in act_mat_dic.items():
-            pos_mat = self._get_act_mat(d, 'pos_mat')
-            neg_mat = self._get_act_mat(d, 'neg_mat')
-            fixed_mat = self._get_act_mat(d, 'fixed_mat')
+            self._act_matrices[key] = {}
+            for mat_type in ('pos_mat', 'neg_mat', "fixed_mat"):
+                if mat_type in d:
+                    mat = d[mat_type]
+                else:
+                    mat = np.zeros((self._no_states, self._no_states))
 
-            self._act_matrices[key] = {'pos_mat': self._init_act_mat(pos_mat),
-                                       'neg_mat': self._init_act_mat(neg_mat),
-                                       'fixed_mat': self._init_act_mat(fixed_mat)}
-            #self._param_size[key] = d['param_size']
+                self._act_matrices[key][mat_type] = mat
+
             self._var_type[key] = d['var_type']
 
     def _get_act_mat(self, d, matrix_type):

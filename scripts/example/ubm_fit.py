@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from scripts.clickmodel_fitters.clickdefinitionreader import ClickDefinition
 from scripts.clickmodel_fitters.GCM import GCM
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
@@ -19,21 +18,21 @@ from tensorflow.keras.layers import Activation
 import tensorflow as tf
 
 
-class LowerDiagWeight(Constraint):
-    """Constrains the weights to be on the lower diagonal.
-    """
-    def __init(self, dummy=1):
-        self._dummy = dummy
-
-    def __call__(self, w):
-        N = K.int_shape(w)[-1]
-        m = K.constant(np.tril(np.ones((N, N))))
-        w = w * m
-
-        return w
-
-    def get_config(self):
-        return {'dummy': self._dummy}
+# class LowerDiagWeight(Constraint):
+#     """Constrains the weights to be on the lower diagonal.
+#     """
+#     def __init(self, dummy=1):
+#         self._dummy = dummy
+#
+#     def __call__(self, w):
+#         N = K.int_shape(w)[-1]
+#         m = K.constant(np.tril(np.ones((N, N))))
+#         w = w * m
+#
+#         return w
+#
+#     def get_config(self):
+#         return {'dummy': self._dummy}
 
 
 def alt_softmax(x):
@@ -53,11 +52,12 @@ if __name__ == "__main__":
 
     var_dic_store_loc = "./data/small_example/ubm_var_dics.pl"
     yaml_file_loc = "./model_definitions/ubm_definitions.yaml"
+    click_def_loc = "./data/small_example/click_def_loc.pl"
 
     click_mat = pd.read_parquet("./data/small_example/click_mat.parquet.gzip")
     item_pos_mat = pd.read_parquet("./data/small_example/item_pos.parquet.gzip")
 
-    model_def = ClickDefinition(yaml_file_loc)
+    model_def = pl.load(open(click_def_loc, "rb"))
 
     var_dic_file = open(var_dic_store_loc, "rb")
     var_dic = pl.load(var_dic_file)
@@ -73,7 +73,6 @@ if __name__ == "__main__":
     # First compute the kernel
     model_gamma.add(Dense(var_dic['gamma'].shape[1], use_bias=False, activation=alt_softmax,
                           kernel_initializer=gamma_initializer, kernel_constraint=LowerDiagWeight()))
-                         # kernel_constraint=LowerDiagWeight, kernel_initializer=gamma_initializer))
     model_gamma.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
 
     model_tau = Sequential()

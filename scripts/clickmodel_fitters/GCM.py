@@ -337,9 +337,9 @@ class GCM:
         for t in range(md.list_size):
             trans_mat = np.ones((md.no_states, md.no_states))
             for var_name, act_mat in md.act_matrices.items():
-                if var_name in md.t0_fixed and t == 0:
-                    cur_param = md.t0_fixed[var_name]
-                elif md.var_type[var_name] == 'item':
+                # if var_name in md.t0_fixed and t == 0:
+                #     cur_param = md.t0_fixed[var_name]
+                if md.var_type[var_name] == 'item':
                     cur_param = vars_dic[var_name][item_order[t]]
                 elif md.var_type[var_name] == 'session':
                     cur_param = vars_dic[var_name][i]
@@ -353,8 +353,8 @@ class GCM:
                     raise KeyError("Parameter type " + str(md.var_type[var_name]) +
                                    " is not supported. Supported types: 'item', 'session' and 'pos'")
 
-                update = cur_param * (act_mat['pos_mat'] - act_mat['neg_mat']) \
-                    + act_mat['neg_mat'] + act_mat['fixed_mat']
+                update = cur_param * (act_mat['pos_mat'] - act_mat['neg_mat']) + \
+                         act_mat['neg_mat'] + act_mat['fixed_mat']
 
                 # I.e., overlapping + new updates + old updates
                 trans_mat = trans_mat * update
@@ -372,7 +372,7 @@ class GCM:
 
             # Check if less than 1
             try:
-                np.testing.assert_array_less(row_sums, np.ones(md.no_states))
+                np.testing.assert_array_less(row_sums, np.ones(md.no_states)+10**(-13))
             except AssertionError as e:
                 raise ValueError("Probabilities in transition matrix at time: " + str(t) + ", session: " + str(i) +
                                  ", exceed one. Assertion error message: " + str(e))

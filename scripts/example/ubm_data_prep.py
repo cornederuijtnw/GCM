@@ -5,13 +5,38 @@ import pickle as pl
 
 
 if __name__ == "__main__":
-    yaml_file_loc = "./model_definitions/ubm_definitions.yaml"
     var_dic_store_loc = "./data/small_example/ubm_var_dics.pl"
+    click_def_loc = "./data/small_example/click_def_loc.pl"
 
     click_data = pd.read_csv("./data/small_example/simulation_res_train.csv", index_col=False)
     prod_position = pd.read_csv("./data/small_example/simulation_item_props.csv", index_col=False)
 
-    model_def = ClickDefinition(yaml_file_loc)
+    # __init__(self, click_states, init_state, list_size, no_states, batch_size, no_items, abs_states, var_dic)
+    list_size = 10
+    no_states = 11
+    ubm_click_states = np.eye(list_size + 1, list_size + 1)
+    abs_state = [(i, i) for i in range(no_states)]
+    init_state = 0
+    batch_size = 500
+    no_items = 10
+
+    var_dic = {
+        'phi_A': {
+            'var_type': 'item',
+            'pos_mat': np.triu(np.ones((list_size + 1, list_size + 1)), k=1)
+        },
+        'gamma': {
+            'var_type': 'state',
+            'pos_mat': np.triu(np.ones((list_size + 1, list_size + 1)), k=1)
+        },
+        'tau': {
+            'var_type': 'pos',
+            'pos_mat': np.triu(np.ones((list_size + 1, list_size + 1)), k=1)
+        }
+    }
+
+    model_def = ClickDefinition(ubm_click_states, init_state, list_size, no_states, batch_size, no_items, abs_state,
+                                var_dic)
 
     # Make sure order is correct:
     click_data = click_data.sort_values(['user_id', 'session_count', 'item_order'])
@@ -68,3 +93,6 @@ if __name__ == "__main__":
 
     click_mat.to_parquet("./data/small_example/click_mat.parquet.gzip", compression="gzip")
     item_pos_mat.to_parquet("./data/small_example/item_pos.parquet.gzip", compression="gzip")
+
+    # Store click model definitions:
+    pl.dump(model_def, open(click_def_loc, "wb"))
