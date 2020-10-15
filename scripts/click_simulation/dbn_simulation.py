@@ -74,7 +74,7 @@ class DBNSimulator:
 
         pool = mp.Pool(mp.cpu_count() - 1)
 
-        sim_res = list(pool.map(SCCMSimulation._single_user_simulation, [{'param_cont': self._param_container,
+        sim_res = list(pool.map(DBNSimulator._single_user_simulation, [{'param_cont': self._param_container,
                                                           'order_rel': order_relevance,
                                                           'u': u,
                                                           'attr_mat': self._attr_mat,

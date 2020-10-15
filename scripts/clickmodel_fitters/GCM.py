@@ -63,10 +63,8 @@ class GCM:
                     param_norm += la.norm((param_ests.flatten(), pred[var_name]))
 
                 VP.print("Current norm: " + str(round(param_norm, 5)), verbose)
-                VP.print("Current perplexity: " + str(round(cur_entropy, 5)), verbose)
 
             # Step 2.1: E-step:
-            # pool = mp.Pool(n_jobs)
 
             VP.print("Running E-step ...", verbose)
 
@@ -79,22 +77,16 @@ class GCM:
                                'session_count': no_sessions}
                               for i in range(no_sessions)]
 
-            # Use for debugging (same as above, but not paralized)
-            all_marginal_dat = [GCM._compute_marginals_IO_HMM(param_dic_list[i])
-                                for i in np.arange(no_sessions)]
+            # Used for debugging
+            if n_jobs == 1:
+                all_marginal_dat = [GCM._compute_marginals_IO_HMM(param_dic_list[i])
+                                    for i in np.arange(no_sessions)]
+            else:
+                pool = mp.Pool(mp.cpu_count()-1)
+                all_marginal_dat = list(pool.map(GCM._compute_marginals_IO_HMM, param_dic_list))
 
-            # Compute all the marginal probabilities
-            # TODO: USE MAP INSTEAD, OTHERWISE WON'T BE OF MUCH USE...
-            # all_marginal_dat = [pool.apply(GCM._compute_marginals_IO_HMM,
-            #                                args=(click_mat[i, :],
-            #                                 parameter_dic,
-            #                                 list_size,
-            #                                 item_order[i, :],
-            #                                 model_def,
-            #                                 i)) for i in np.arange(no_sessions)]
-
-            # pool.close()
-            # pool.join()
+                pool.close()
+                pool.join()
 
             # Format the marginal probabilities as weights
             weight_dic, click_prob = GCM._format_weights_and_covariates(all_marginal_dat, model_def)
@@ -149,40 +141,6 @@ class GCM:
 
         zeta_mat = np.vstack(zeta_lst)
         return weight_dic, zeta_mat[:, 1:]  # Remove time 0
-
-    @staticmethod
-    def _get_param_weights_in_session(param_dic):
-        cur_list_pos = param_dic['cur_list_pos']
-        marginal_dic = param_dic['marginal_dic']
-        model_def = param_dic['model_def']
-        session_count = param_dic['session_count']
-        cur_session = param_dic['cur_session']
-
-        click_prob = (marginal_dic['zeta_vec'] *
-                          np.eye(model_def.no_states, model_def.list_size + 1)).sum(-1)
-
-        weight_vectors = {}
-        weight_dic = marginal_dic['reg_out']
-
-        for var_key, feat_type in model_def.var_type.items():
-            if feat_type == "item":
-                # First column are the positives items, second are the negatives
-                weight_vectors[var_key] = np.hstack((np.put(np.zeros(model_def.no_items), cur_list_pos,
-                                                            weight_dic[var_key][0]).reshape(-1, 1),
-                                                     np.put(np.zeros(model_def.no_items), cur_list_pos,
-                                                            weight_dic[var_key][1]).reshape(-1, 1)))
-
-            elif feat_type == "session":
-                weight_vectors[var_key] = np.hstack((np.put(np.zeros(session_count), cur_session,
-                                                            weight_dic[var_key][0].sum()),
-                                                     np.put(np.zeros(session_count), cur_session,
-                                                            weight_dic[var_key][1].sum())))
-
-            elif feat_type == "state":
-                weight_vectors[var_key]
-
-            else:
-                raise NotImplementedError("Only 'session' and 'item' variables are currently implemented")
 
     @staticmethod
     def _get_weight_index_matrix(list_size, no_states):
@@ -272,14 +230,15 @@ class GCM:
             elif model_def.var_type[var_key] == "session":
                 cur_vec_plus = np.zeros(session_count)
                 cur_vec_minus = np.zeros(session_count)
-                np.put(cur_vec_plus, i, np.sum(W_plus)).reshape(-1, 1)
-                np.put(cur_vec_minus, i, np.sum(W_minus)).reshape(-1, 1)
+                np.put(cur_vec_plus, i, np.sum(W_plus))
+                np.put(cur_vec_minus, i, np.sum(W_minus))
 
                 marginals[var_key] = np.hstack((cur_vec_plus.reshape(-1, 1), cur_vec_minus.reshape(-1, 1)))
 
             elif model_def.var_type[var_key] == "state": # TODO: Check, is this axis correct???, is the way the matrix is flatten correct?
                 marginals[var_key] = np.hstack((np.sum(W_plus, axis=2).flatten().reshape(-1, 1),
                                                 np.sum(W_minus, axis=2).flatten().reshape(-1, 1)))
+
             elif model_def.var_type[var_key] == "pos":
                 marginals[var_key] = np.hstack((np.sum(W_plus, axis=(0, 1)).reshape(-1, 1),
                                                 np.sum(W_minus, axis=(0, 1)).reshape(-1, 1)))
@@ -288,6 +247,10 @@ class GCM:
 
     @staticmethod
     def _compute_IO_HMM_est(click_vec, var_dic, item_order, model_def, i):
+
+        VP.print(i, verbose=True)
+        if i == 6:
+            print("")
         # Determine all sessions weights and the state probabilities (zeta vector)
         trans_matrices = GCM._get_trans_mat(model_def, var_dic, item_order, i)
         x_init_state = model_def.init_state
@@ -359,15 +322,6 @@ class GCM:
                 # I.e., overlapping + new updates + old updates
                 trans_mat = trans_mat * update
 
-            # try:
-            #     np.testing.assert_array_almost_equal(np.sum(trans_mat, axis=1), expected_sums)
-            # except AssertionError as e:
-            #     raise ValueError("Probabilities in transition matrix at time: " + str(t) + ", session: " + str(i) +
-            #                      ", do not sum to one. Assertion error message: " + str(e))
-
-            # As final step, absorb everything in the absorbing state
-            # trans_mat[:, md.no_states - 1] = 1 - expected_sums
-
             row_sums = np.sum(trans_mat, axis=1)
 
             # Check if less than 1
@@ -380,10 +334,8 @@ class GCM:
             for i in range(md.no_states):
                 trans_mat[md.absorbing_state[i]] = 1 - row_sums[i]
 
-            # Normalize (to avoid small errors):
-            # trans_mat = trans_mat * np.tile(1/np.sum(trans_mat, axis=1), (md.no_states, 1)).T
-            # trans_mat = np.nan_to_num(trans_mat, nan=0) # Replace nan's by 0
-
+            # The original I/O-HMM paper considers the transition matrix transpose, so from that paper this is
+            # a bit easier perspective.
             trans_mat = trans_mat.T
             trans_matrices.append(trans_mat)
 

@@ -1,0 +1,10 @@
+
+--- # czm definition
+click_state: 3
+no_states: 7
+list_size: 10
+batch_size: 10000
+item_size: 100
+
+
+

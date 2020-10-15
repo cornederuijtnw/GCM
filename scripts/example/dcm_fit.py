@@ -5,6 +5,8 @@ from scripts.clickmodel_fitters.GCM import GCM
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.optimizers import RMSprop
+from tensorflow.keras.layers import RepeatVector
+from sklearn.model_selection import GroupKFold
 
 
 if __name__ == "__main__":
@@ -15,48 +17,34 @@ if __name__ == "__main__":
     no_states = 7
     click_states = np.zeros((no_states, list_size + 1))
     click_states[3, :] = 1
-    abs_state = [(i, 6) for i in range(7)]
-    init_state = 3  # Equals the click state
-    batch_size = 500
-    no_items = 10
+    abs_state = [(i, no_states-1) for i in range(no_states)]
+    init_state = 1  # The click state goes to an absorbing state, so use evaluated but not attracted instead
+    batch_size = 10000
+    no_items = 100
 
     var_dic = {
-        'gamma': {
-            'var_type': 'session',
-            'pos_mat': np.vstack((np.zeros((2, no_states)),
-                                  np.array([0, 0, 1, 1, 0, 0, 0]),
-                                  np.array([0, 0, 1, 1, 0, 0, 0]),
-                                  np.zeros((3, no_states)))),
-            'neg_mat': np.vstack((np.zeros((2, no_states)),
-                                  np.array([1, 1, 0, 0, 0, 0, 0]),
-                                  np.array([1, 1, 0, 0, 0, 0, 0]),
-                                  np.zeros((3, no_states)))),
-            'fixed_mat': np.vstack((np.zeros((3, no_states)),
-                                    np.array([0, 0, 0, 0, 1, 1, 0]),
-                                    np.zeros((3, no_states))))
-        },
-        'phi_S': {
-            'var_type': 'item',
-            'pos_mat': np.vstack((np.zeros((3, no_states)),
-                                  np.array([0, 0, 0, 0, 1, 1, 0]),
-                                  np.zeros((3, no_states)))),
-            'neg_mat': np.vstack((np.zeros((3, no_states)),
-                                  np.array([1, 1, 1, 1, 0, 0, 0]),
-                                  np.zeros((3, no_states)))),
-            'fixed_mat': np.vstack((np.zeros((2, no_states)),
-                                    np.array([1, 1, 1, 1, 0, 0, 0]),
-                                    np.zeros((4, no_states))))
-        },
         'phi_A': {
             'var_type': 'item',
             'pos_mat': np.vstack((np.zeros((2, no_states)),
-                                  np.array([0, 1, 0, 1, 0, 0, 0]),
-                                  np.array([0, 1, 0, 1, 0, 1, 0]),
+                                  np.array([0, 0, 0, 1, 0, 0, 0]),
+                                  np.array([0, 0, 0, 1, 0, 1, 0]),
                                   np.zeros((3, no_states)))),
             'neg_mat': np.vstack((np.zeros((2, no_states)),
-                                  np.array([1, 0, 1, 0, 0, 0, 0]),
-                                  np.array([1, 0, 1, 0, 1, 0, 0]),
-                                  np.zeros((3, no_states))))
+                                  np.array([0, 0, 1, 0, 0, 0, 0]),
+                                  np.array([0, 0, 1, 0, 1, 0, 0]),
+                                  np.zeros((3, no_states)))),
+        },
+        'gamma': {
+            'var_type': 'pos',
+            'pos_mat': np.vstack((np.zeros((3, no_states)),
+                                  np.array([0, 0, 1, 1, 0, 0, 0]),
+                                  np.zeros((3, no_states)))),
+            'neg_mat': np.vstack((np.zeros((3, no_states)),
+                                  np.array([0, 0, 0, 0, 1, 1, 0]),
+                                  np.zeros((3, no_states)))),
+            'fixed_mat': np.vstack((np.zeros((2, no_states)),
+                                  np.array([0, 0, 1, 1, 0, 0, 0]),
+                                  np.zeros((4, no_states))))
         }
     }
 
@@ -79,11 +67,6 @@ if __name__ == "__main__":
               on=['user_id', 'session_count']) \
         .reset_index()
 
-    # Sample first 500 sessions:
-    click_data = click_data.loc[click_data['session'] < model_def.batch_size, :]
-
-    sessions = click_data['session'].nunique()
-
     # Get click matrix and item-position matrix
     click_mat = click_data.loc[:, ['session', 'item_order', 'click']] \
         .pivot(index='session', columns='item_order', values='click') \
@@ -98,27 +81,21 @@ if __name__ == "__main__":
                                         .sort_values()
                                         .unique())
 
-    item_feature_mat_S = pd.get_dummies(click_data['item']
-                                        .sort_values()
-                                        .unique())
-
-    gamma_feature_mat = np.ones((sessions, 1))
+    item_feature_mat_gamma = np.eye(list_size + 1)
 
     model_phi_A = Sequential()
     model_phi_A.add(Dense(1, input_dim=item_feature_mat_A.shape[1], activation='sigmoid', use_bias=False))
     model_phi_A.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
 
-    model_phi_S = Sequential()
-    model_phi_S.add(Dense(1, input_dim=item_feature_mat_S.shape[1], activation='sigmoid', use_bias=False))
-    model_phi_S.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
-
     model_gamma = Sequential()
-    model_gamma.add(Dense(1, input_dim=gamma_feature_mat.shape[1], activation='sigmoid', use_bias=False))
+    # First compute the kernel
+    model_gamma.add(Dense(1, input_dim=item_feature_mat_gamma.shape[1], activation='sigmoid', use_bias=False))
+    model_gamma.add(RepeatVector(no_states**2))
     model_gamma.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
 
-    var_dic = {'phi_A': item_feature_mat_A, 'phi_S': item_feature_mat_S, 'gamma': gamma_feature_mat}
-    var_models = {'phi_A': model_phi_A, 'phi_S': model_phi_S, 'gamma': model_gamma}
+    var_dic = {'phi_A': item_feature_mat_A, 'gamma': item_feature_mat_gamma}
+    var_models = {'phi_A': model_phi_A, 'gamma': model_gamma}
 
-    res = GCM.runEM(click_mat, var_dic, var_models, item_pos_mat, model_def, verbose=True)
+    res = GCM.runEM(click_mat, var_dic, var_models, item_pos_mat, model_def, verbose=True, n_jobs=1)
 
     print(res[2])

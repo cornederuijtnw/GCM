@@ -1,8 +1,8 @@
 
 --- # Simulation definition
 has_cookie_param: False
-no_items: 10
-no_users: 1000
+no_items: 100
+no_users: 20000
 warm_up_sessions: 100
 list_size: 10
 user_dist_sens: 1
