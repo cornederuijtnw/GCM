@@ -116,14 +116,14 @@ class GCM:
             else:
                 early_stop_counter += 1
 
-
             VP.print("Running M-step ...", verbose)
             #
             # # M-step (since keras already paralizes, I do not):
-            var_models = GCM._optimize_params(var_models, weight_dic, var_dic, verbose=True)
+            var_models = GCM._optimize_params(var_models, weight_dic, var_dic)
 
             it += 1
 
+        VP.print("Finished", verbose)
         return var_models, all_pred, cond_entropy, all_click_prob
 
     @staticmethod
