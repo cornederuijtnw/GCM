@@ -1,11 +1,14 @@
 import numpy as np
+import pickle as pl
 import pandas as pd
 from scripts.clickmodel_fitters.clickdefinitionreader import ClickDefinition
 from scripts.clickmodel_fitters.GCM import GCM
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.optimizers import RMSprop
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from keras.optimizers import Adagrad
 from tensorflow.keras.layers import RepeatVector
+import tensorflow as tf
+import tensorflow.keras.backend as K
 from sklearn.model_selection import GroupKFold
 
 
@@ -18,7 +21,7 @@ if __name__ == "__main__":
     click_states = np.zeros((no_states, list_size + 1))
     click_states[3, :] = 1
     abs_state = [(i, no_states-1) for i in range(no_states)]
-    init_state = 1  # The click state goes to an absorbing state, so use evaluated but not attracted instead
+    init_state = 2  # The click state goes to an absorbing state, so use evaluated but not attracted instead
     batch_size = 10000
     no_items = 100
 
@@ -36,6 +39,7 @@ if __name__ == "__main__":
         },
         'gamma': {
             'var_type': 'pos',
+            't0_fixed': 1,
             'pos_mat': np.vstack((np.zeros((3, no_states)),
                                   np.array([0, 0, 1, 1, 0, 0, 0]),
                                   np.zeros((3, no_states)))),
@@ -81,21 +85,26 @@ if __name__ == "__main__":
                                         .sort_values()
                                         .unique())
 
-    item_feature_mat_gamma = np.eye(list_size + 1)
+    item_feature_mat_gamma = np.eye(list_size)
 
     model_phi_A = Sequential()
     model_phi_A.add(Dense(1, input_dim=item_feature_mat_A.shape[1], activation='sigmoid', use_bias=False))
-    model_phi_A.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
+    model_phi_A.compile(loss=GCM.pos_log_loss, optimizer=Adagrad())
 
     model_gamma = Sequential()
     # First compute the kernel
     model_gamma.add(Dense(1, input_dim=item_feature_mat_gamma.shape[1], activation='sigmoid', use_bias=False))
     model_gamma.add(RepeatVector(no_states**2))
-    model_gamma.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
+    model_gamma.compile(loss=GCM.pos_log_loss, optimizer=Adagrad())
 
     var_dic = {'phi_A': item_feature_mat_A, 'gamma': item_feature_mat_gamma}
     var_models = {'phi_A': model_phi_A, 'gamma': model_gamma}
 
-    res = GCM.runEM(click_mat, var_dic, var_models, item_pos_mat, model_def, verbose=True, n_jobs=1)
+    res = GCM.runEM(click_mat, var_dic, var_models, item_pos_mat, model_def, verbose=True, earlystop_patience=10,
+                    n_jobs=1)
+
+    pl.dump(res[1], open("./data/small_example/state_prob.pl", "wb"))
+    pl.dump(res[2], open("./data/small_example/convergence.pl", "wb"))
+    pl.dump(res[3], open("./data/small_example/click_probs.pl", "wb"))
 
     print(res[2])

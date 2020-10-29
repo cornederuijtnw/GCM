@@ -41,6 +41,7 @@ class ClickDefinition:
     def __init__(self, click_states, init_state, list_size, no_states, batch_size, no_items, abs_state, var_dic):
         self._act_matrices = {}
         self._var_type = {}
+        self._t0_fixed = {}
 
         self._click_states = click_states
         self._init_state = init_state
@@ -121,13 +122,13 @@ class ClickDefinition:
         """
         return self._act_matrices
 
-    # @property
-    # def t0_fixed(self):
-    #     """
-    #     A dictionary of parameters being fixed from transition 0 to 1
-    #     """
-    #     return self._t0_fixed
-    #
+    @property
+    def t0_fixed(self):
+        """
+        A dictionary of parameters being fixed from transition 0 to 1
+        """
+        return self._t0_fixed
+
     @property
     def absorbing_state(self):
         return self._abs_state
@@ -159,6 +160,8 @@ class ClickDefinition:
                 self._act_matrices[key][mat_type] = mat
 
             self._var_type[key] = d['var_type']
+            if 't0_fixed' in d:
+                self._t0_fixed[key] = d['t0_fixed']
 
     def _get_act_mat(self, d, matrix_type):
         if matrix_type not in d:

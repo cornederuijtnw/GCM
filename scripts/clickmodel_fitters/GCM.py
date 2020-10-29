@@ -9,6 +9,7 @@ import multiprocessing as mp
 from scripts.verboseprinter import VerbosePrinter as VP
 
 
+
 class GCM:
     """
     Static class for fitting Generalized click model_definitions.
@@ -18,7 +19,8 @@ class GCM:
 
     @staticmethod
     def runEM(click_mat, var_dic, var_models, item_order, model_def,
-              n_jobs=mp.cpu_count()-1, max_iter=10, seed=0, tol=10**(-3), verbose=False):
+              n_jobs=mp.cpu_count()-1, max_iter=100, seed=0, tol=10**(-3),
+              earlystop_patience=5, verbose=False):
         '''
         Parameters
         ----------
@@ -41,26 +43,30 @@ class GCM:
         rd.seed(seed)
 
         no_sessions = click_mat.shape[0]
-        list_size = model_def.list_size
-        pred = {}
-        var_type_dic = model_def.var_type
+        all_click_prob = []
+
+        all_pred = []
+        early_stop_counter = 0
 
         param_norm = 100
         cond_entropy = []
+        best_entropy = 2
 
         it = 0
 
         # Step 2: EM algorithm:
-        while param_norm > tol and it < max_iter:
+        while param_norm > tol and it < max_iter and early_stop_counter < earlystop_patience:
             VP.print("Iteration: " + str(it), verbose)
 
             pred = GCM._get_prediction(var_models, var_dic)
+
+            all_pred.append(pred)
 
             if it > 0:
                 param_norm = 0
                 for var_name, param_ests in pred.items():
                     #  Compute the norm
-                    param_norm += la.norm((param_ests.flatten(), pred[var_name]))
+                    param_norm += la.norm((param_ests.flatten() - all_pred[len(all_pred) - 2][var_name]))
 
                 VP.print("Current norm: " + str(round(param_norm, 5)), verbose)
 
@@ -94,16 +100,31 @@ class GCM:
             # # Compute entropy using the zeta vector (state probability vector)
             cur_entropy = log_loss(click_mat.flatten(), click_prob.flatten())
             cond_entropy.append(cur_entropy)
+            all_click_prob.append(click_prob.flatten())
 
             VP.print("Current conditional entropy:" + str(round(cond_entropy[it], 5)), verbose)
+            if cond_entropy[it] < best_entropy:
+                # Store the best
+                best_entropy = cond_entropy[it]
+                early_stop_counter = 0
+                for model_name, model in var_models.items():
+                    model_yaml = model.to_yaml()
+                    with open("./models/" + model_name +"_model.yaml", "w") as yaml_file:
+                        yaml_file.write(model_yaml)
+                    # serialize weights to HDF5
+                    model.save_weights("./models/" + model_name + "_weights.h5")
+            else:
+                early_stop_counter += 1
+
+
             VP.print("Running M-step ...", verbose)
             #
             # # M-step (since keras already paralizes, I do not):
-            var_models = GCM._optimize_params(var_models, weight_dic, var_dic, verbose)
+            var_models = GCM._optimize_params(var_models, weight_dic, var_dic, verbose=True)
 
             it += 1
 
-        return var_models, pred, cond_entropy
+        return var_models, all_pred, cond_entropy, all_click_prob
 
     @staticmethod
     def pos_log_loss(y_true, y_pred):
@@ -119,7 +140,8 @@ class GCM:
         y_true_f = Kback.clip(Kback.flatten(y_true), smooth, 1 - smooth)
         y_pred_f = Kback.clip(Kback.flatten(y_pred), smooth, 1 - smooth)
 
-        return -Kback.sum((Kback.sign(y_true_f) + 1.) * y_true_f * Kback.log(y_pred_f) / 2.
+        # Positive, as keras minimizes
+        return Kback.sum((Kback.sign(y_true_f) + 1.) * y_true_f * Kback.log(y_pred_f) / 2.
                          + (1. - (Kback.sign(y_true_f) + 1.) / 2.)
                          * Kback.abs(y_true_f) * Kback.log(1. - y_pred_f))
 
@@ -163,19 +185,19 @@ class GCM:
         pred = {}
 
         for var_name, k_model in var_models.items():
-            X = np.vstack((var_dic[var_name], var_dic[var_name]))
+            X = np.asarray(np.vstack((var_dic[var_name], var_dic[var_name]))).astype('float32')
             model = var_models[var_name]
 
             # Note that since we first double the number of rows, division by 2 to always results in a natural number
-            pred[var_name] = model.predict(X[:(int)(X.shape[0]/2), :]).flatten()
+            pred[var_name] = np.clip(model.predict(X[:int(X.shape[0]/2), :]).flatten(), 10**(-3), 1-(10**(-3)))
 
             # Replace possible NaN-values by 0s
-            pred[var_name] = np.nan_to_num(pred[var_name], nan=0)
+            # pred[var_name] = np.nan_to_num(pred[var_name], nan=0)
 
         return pred
 
     @staticmethod
-    def _optimize_params(var_models, weight_dic, var_dic, verbose):
+    def _optimize_params(var_models, weight_dic, var_dic, verbose=False):
         # Procedure that finds the next parameters, based on the current E-step
         callback = EarlyStopping(monitor='loss', patience=5)
 
@@ -235,59 +257,56 @@ class GCM:
 
                 marginals[var_key] = np.hstack((cur_vec_plus.reshape(-1, 1), cur_vec_minus.reshape(-1, 1)))
 
-            elif model_def.var_type[var_key] == "state": # TODO: Check, is this axis correct???, is the way the matrix is flatten correct?
+            elif model_def.var_type[var_key] == "state":
                 marginals[var_key] = np.hstack((np.sum(W_plus, axis=2).flatten().reshape(-1, 1),
                                                 np.sum(W_minus, axis=2).flatten().reshape(-1, 1)))
 
             elif model_def.var_type[var_key] == "pos":
-                marginals[var_key] = np.hstack((np.sum(W_plus, axis=(0, 1)).reshape(-1, 1),
-                                                np.sum(W_minus, axis=(0, 1)).reshape(-1, 1)))
+                marginals[var_key] = \
+                    np.hstack((np.repeat(np.sum(W_plus, axis=(0, 1)), model_def.no_states**2).reshape(-1, 1),
+                               np.repeat(np.sum(W_minus, axis=(0, 1)), model_def.no_states**2).reshape(-1, 1)))
 
         return {'reg_out': marginals, 'zeta_vec': zeta_vec}
 
     @staticmethod
     def _compute_IO_HMM_est(click_vec, var_dic, item_order, model_def, i):
-
-        VP.print(i, verbose=True)
-        if i == 6:
-            print("")
         # Determine all sessions weights and the state probabilities (zeta vector)
+        #print(str(i))
         trans_matrices = GCM._get_trans_mat(model_def, var_dic, item_order, i)
         x_init_state = model_def.init_state
         list_size = model_def.list_size
+
+        # Please note: In the paper I've defined H, y and M for t=1 to T, here I shift it to t=0 to T-1.
 
         # The forward-backward algorithm:
         # at t=0:
         B = np.zeros((model_def.no_states, list_size + 1))
         A = np.zeros((model_def.no_states, list_size + 1))
+        L = np.zeros((model_def.no_states, list_size))  # No need for the +1
         H = np.zeros((model_def.no_states, model_def.no_states, list_size))
         zeta = np.zeros((model_def.no_states, list_size + 1))
 
         click_states = model_def.click_states
 
-        # States where there is a click by definition:
-        B[:, list_size] = click_vec[list_size - 1] * click_states[:, list_size] + (1 - click_vec[list_size - 1]) * (
-                1 - click_states[:, list_size])
-        A[x_init_state, 0] = 1  # We assume that at time t=0 there is a click
+        B[:, list_size] = 1
+        # B[:, list_size] = click_vec[list_size - 1] * click_states[:, list_size] + (1 - click_vec[list_size - 1]) * (
+        #         1 - click_states[:, list_size])
+        A[x_init_state, 0] = 1  #
         zeta[x_init_state, 0] = 1
         for t in range(1, list_size+1):
-            zeta[:, t] = np.dot(trans_matrices[t - 1], zeta[:, t - 1].T)
-            # Just as due to some numerical unstability the sum might not always be 1:
-            zeta[:, t] = zeta[:, t] / np.sum(zeta[:, t])
-
             # Note that the click vector itself does not have the 0 state, so the index is one behind
+            zeta[:, t] = trans_matrices[t - 1] @  zeta[:, t - 1]
+
             A[:, t] = click_vec[t-1] * click_states[:, t] * np.dot(trans_matrices[t - 1], A[:, t - 1].T) + \
                       (1 - click_vec[t-1]) * (1 - click_states[:, t]) * np.dot(trans_matrices[t - 1], A[:, t - 1].T)
         for t in reversed(range(1, list_size+1)):
-            H[:, :, t - 1] = np.outer(B[:, t], A[:, t - 1]) / np.sum(A[:, list_size - 1]) * trans_matrices[t - 1]
+            L[:, t - 1] = click_vec[t - 1] * click_states[:, t] * B[:, t] + \
+                      (1 - click_vec[t - 1]) * (1 - click_states[:, t]) * B[:, t]
+            B[:, t - 1] = np.dot(trans_matrices[t - 1].T, L[:, t-1].T)
+            H[:, :, t - 1] = np.outer(L[:, t - 1], A[:, t - 1]) / np.sum(A[:, list_size]) * trans_matrices[t - 1]
 
-            # Just as due to some numerical instability the sum might not always be 1:
-            H[:, :, t - 1] = H[:, :, t - 1] / np.sum(H[:, :, t - 1])
-            if t > 1:
-                B[:, t - 1] = click_vec[t - 2] * click_states[:, t-1] * np.dot(trans_matrices[t - 1].T, B[:, t].T) + \
-                              (1 - click_vec[t - 2]) * (1 - click_states[:, t-1]) * np.dot(trans_matrices[t - 1].T, B[:, t].T)
-            else:  # We assume state 0 is clicked
-                B[:, t-1] = click_states[:, t-1] * np.dot(trans_matrices[t - 1].T, B[:, t].T)
+            # Eq. 13.33 in Bishop: this would be conditioned on all data,
+            # zeta[:, t] = B[:, t] * A[:, t] / np.sum(A[:, list_size])
 
         return H, zeta
 
@@ -300,9 +319,9 @@ class GCM:
         for t in range(md.list_size):
             trans_mat = np.ones((md.no_states, md.no_states))
             for var_name, act_mat in md.act_matrices.items():
-                # if var_name in md.t0_fixed and t == 0:
-                #     cur_param = md.t0_fixed[var_name]
-                if md.var_type[var_name] == 'item':
+                if var_name in md.t0_fixed and t == 0:
+                    cur_param = md.t0_fixed[var_name]
+                elif md.var_type[var_name] == 'item':
                     cur_param = vars_dic[var_name][item_order[t]]
                 elif md.var_type[var_name] == 'session':
                     cur_param = vars_dic[var_name][i]
