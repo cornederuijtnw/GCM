@@ -164,6 +164,10 @@ class GCM:
 
             i += 1
 
+        # Center (sign should remain the same!):
+        for key, value in weight_dic.items():
+            weight_dic[key] = value / np.sum(np.abs(value))
+
         zeta_mat = np.vstack(zeta_lst)
         return weight_dic, zeta_mat[:, 1:]  # Remove time 0
 
@@ -211,13 +215,15 @@ class GCM:
         for var_name, k_model in var_models.items():
             X = np.vstack((var_dic[var_name], var_dic[var_name]))
             model = var_models[var_name]
-            output_dim = model.layers[len(model.layers) - 1].output.shape[1]
+            output_dim = int(weight_dic[var_name].shape[0]/X.shape[0]*2)
             trainable = len(model.trainable_weights) > 0
 
             if trainable:
                 if output_dim == 1:
                     Y = weight_dic[var_name].flatten(order='F')  # column-wise flatten (row-wise is the default)
                 else:
+                    # output doesn't have to be equal to the number of nodes in the layer. Determine empirically:
+                    output_dim = int(weight_dic[var_name].shape[0]/X.shape[0]*2)
                     Y = weight_dic[var_name].T.reshape((X.shape[0], output_dim))
 
                 model.fit(X, Y, batch_size=min(Y.shape[0], 8192), epochs=epochs, verbose=True, callbacks=[callback])

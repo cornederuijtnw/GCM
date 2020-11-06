@@ -134,8 +134,7 @@ item_pos_mat = click_data.loc[:, ['session', 'item_order', 'item']] \
 item_feature_mat_A = (click_data.loc[:, ['item', 'X0', 'X1']]
                                 .drop_duplicates()
                                 .sort_values('item')
-                                .to_numpy()
-                     )
+                                .to_numpy())
 
 # pos_feature_mat_tau_lst = []
 #
