@@ -130,6 +130,6 @@ if __name__ == "__main__":
     var_models = {'phi_A': model_phi_A, 'phi_S': model_phi_S, 'gamma': model_gamma}
 
     # Run model
-    res = GCM.runEM(click_mat, var_dic, var_models, item_pos_mat, model_def, verbose=True)
+    res = GCM.runEM(click_mat, var_dic, var_models, item_pos_mat, model_def, verbose=True, n_jobs=1)
 
     print(res[2])

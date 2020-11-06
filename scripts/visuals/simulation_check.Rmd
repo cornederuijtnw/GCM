@@ -1,0 +1,87 @@
+---
+title: "Simulation check"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyverse)
+library(knitr)
+library(foreach)
+
+setwd("~/github/GCM")
+click_dat <- read.csv("./data/small_example/full_data_set.csv")
+item_prop <- read.csv("./data/small_example/simulation_item_props.csv")
+user_prop <- read.csv("./data/small_example/simulation_user_props.csv")
+dist_mat <- read.csv("./data/small_example/simulation_dist_prop.csv")
+
+```
+
+## Attraction/satisfaction distribution
+
+
+```{r distancedist}
+  salience <- 5
+
+  satis_mat <- exp(dist_mat + salience) / (do.call('cbind', replicate(dim(dist_mat)[2], rowSums(exp(dist_mat)), simplify = F)) - exp(dist_mat) + exp(dist_mat + salience))
+  
+  satis_mat %>%
+    as_tibble() %>% 
+    mutate(user = row_number()) %>%
+    pivot_longer(!user) %>%
+    group_by(user) %>%
+    summarize(min_att = quantile(value, 0),
+           q1_att = quantile(value, 0.25),
+           median_att = quantile(value, 0.5),
+           q2_att = quantile(value, 0.75),
+           max_att = quantile(value, 1)) %>% 
+    pivot_longer(!user) %>%
+    ggplot(.) +
+    geom_density(aes(x=value, fill = name, color = name), alpha = 0.3) +
+    xlim(0, 1)
+    
+   
+```
+
+## List position clicks
+```{r listposclicks}
+  click_dat %>%
+    group_by(item_order) %>%
+    summarize(click=mean(click),
+              att = mean(attr),
+              eval=mean(eval),
+              satis=mean(satis)) %>% 
+  pivot_longer(!item_order) %>%
+  ggplot(.) +
+  geom_line(aes(x=item_order, y=value, color=name))
+
+```
+
+## Distribution clicks over sessions
+
+```{r clicks_over_sessions}
+click_dat %>%
+  left_join(
+  click_dat %>%
+    select(user_id, session_count) %>%
+    distinct() %>%
+    mutate(session_id=row_number()),
+  by=c("user_id","session_count")) %>%
+  group_by(session_id) %>%
+  summarize(clicks=sum(click)) %>%
+  ggplot(.) +
+  geom_histogram(aes(x=clicks))
+    
+
+```
+
+
+
+
+
+
+
+
+
+

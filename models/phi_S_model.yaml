@@ -1,0 +1,37 @@
+backend: tensorflow
+class_name: Sequential
+config:
+  layers:
+  - class_name: InputLayer
+    config:
+      batch_input_shape: !!python/tuple
+      - null
+      - 3
+      dtype: float32
+      name: dense_1_input
+      ragged: false
+      sparse: false
+  - class_name: Dense
+    config:
+      activation: sigmoid
+      activity_regularizer: null
+      batch_input_shape: !!python/tuple
+      - null
+      - 3
+      bias_constraint: null
+      bias_initializer:
+        class_name: Zeros
+        config: {}
+      bias_regularizer: null
+      dtype: float32
+      kernel_constraint: null
+      kernel_initializer:
+        class_name: Zeros
+        config: {}
+      kernel_regularizer: null
+      name: dense_1
+      trainable: true
+      units: 1
+      use_bias: false
+  name: sequential_1
+keras_version: 2.4.0

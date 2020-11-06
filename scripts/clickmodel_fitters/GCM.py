@@ -20,7 +20,7 @@ class GCM:
     @staticmethod
     def runEM(click_mat, var_dic, var_models, item_order, model_def,
               n_jobs=mp.cpu_count()-1, max_iter=100, seed=0, tol=10**(-3),
-              earlystop_patience=5, verbose=False):
+              earlystop_patience=5, verbose=False, keras_epochs=250, store_best=False):
         '''
         Parameters
         ----------
@@ -107,19 +107,20 @@ class GCM:
                 # Store the best
                 best_entropy = cond_entropy[it]
                 early_stop_counter = 0
-                for model_name, model in var_models.items():
-                    model_yaml = model.to_yaml()
-                    with open("./models/" + model_name +"_model.yaml", "w") as yaml_file:
-                        yaml_file.write(model_yaml)
-                    # serialize weights to HDF5
-                    model.save_weights("./models/" + model_name + "_weights.h5")
+                if store_best:
+                    for model_name, model in var_models.items():
+                        model_yaml = model.to_yaml()
+                        with open("./models/" + model_name +"_model.yaml", "w") as yaml_file:
+                            yaml_file.write(model_yaml)
+                        # serialize weights to HDF5
+                        model.save_weights("./models/" + model_name + "_weights.h5")
             else:
                 early_stop_counter += 1
 
             VP.print("Running M-step ...", verbose)
             #
             # # M-step (since keras already paralizes, I do not):
-            var_models = GCM._optimize_params(var_models, weight_dic, var_dic)
+            var_models = GCM._optimize_params(var_models, weight_dic, var_dic, epochs=keras_epochs)
 
             it += 1
 
@@ -137,11 +138,13 @@ class GCM:
         smooth = 10**(-5)
 
         # Ensure value is not 0 or 1, and flatten (to 1-d array)
-        y_true_f = Kback.clip(Kback.flatten(y_true), smooth, 1 - smooth)
+
+        # Don't clip true values! we need the sign! Plus, we do not compute the log over true values
+        y_true_f = Kback.flatten(y_true)
         y_pred_f = Kback.clip(Kback.flatten(y_pred), smooth, 1 - smooth)
 
         # Positive, as keras minimizes
-        return Kback.sum((Kback.sign(y_true_f) + 1.) * y_true_f * Kback.log(y_pred_f) / 2.
+        return -Kback.sum((Kback.sign(y_true_f) + 1.) * y_true_f * Kback.log(y_pred_f) / 2.
                          + (1. - (Kback.sign(y_true_f) + 1.) / 2.)
                          * Kback.abs(y_true_f) * Kback.log(1. - y_pred_f))
 
@@ -185,11 +188,15 @@ class GCM:
         pred = {}
 
         for var_name, k_model in var_models.items():
-            X = np.asarray(np.vstack((var_dic[var_name], var_dic[var_name]))).astype('float32')
+            X = var_dic[var_name].astype("float32")
             model = var_models[var_name]
 
             # Note that since we first double the number of rows, division by 2 to always results in a natural number
-            pred[var_name] = np.clip(model.predict(X[:int(X.shape[0]/2), :]).flatten(), 10**(-3), 1-(10**(-3)))
+
+            pred[var_name] = model.predict(X, batch_size=X.shape[0]).flatten()
+
+            non_zero_pred = np.where(pred[var_name] > 0)
+            pred[var_name][non_zero_pred] = np.clip(pred[var_name][non_zero_pred], 10**(-3), 1-10**(-3))
 
             # Replace possible NaN-values by 0s
             # pred[var_name] = np.nan_to_num(pred[var_name], nan=0)
@@ -197,7 +204,7 @@ class GCM:
         return pred
 
     @staticmethod
-    def _optimize_params(var_models, weight_dic, var_dic, verbose=False):
+    def _optimize_params(var_models, weight_dic, var_dic, verbose=False, epochs=250):
         # Procedure that finds the next parameters, based on the current E-step
         callback = EarlyStopping(monitor='loss', patience=5)
 
@@ -213,7 +220,7 @@ class GCM:
                 else:
                     Y = weight_dic[var_name].T.reshape((X.shape[0], output_dim))
 
-                model.fit(X, Y, batch_size=Y.shape[0], epochs=100, verbose=verbose, callbacks=[callback])
+                model.fit(X, Y, batch_size=min(Y.shape[0], 8192), epochs=epochs, verbose=True, callbacks=[callback])
             var_models[var_name] = model
 
         return var_models
@@ -245,7 +252,7 @@ class GCM:
                 cur_vec_plus = np.zeros(model_def.no_items)
                 cur_vec_minus = np.zeros(model_def.no_items)
                 np.put(cur_vec_plus, item_order, np.sum(W_plus, axis=(0, 1)))
-                np.put(cur_vec_minus, item_order, np.sum(W_plus, axis=(0, 1)))
+                np.put(cur_vec_minus, item_order, np.sum(W_minus, axis=(0, 1)))
 
                 marginals[var_key] = np.hstack((cur_vec_plus.reshape(-1, 1), cur_vec_minus.reshape(-1, 1)))
 
@@ -265,6 +272,12 @@ class GCM:
                 marginals[var_key] = \
                     np.hstack((np.repeat(np.sum(W_plus, axis=(0, 1)), model_def.no_states**2).reshape(-1, 1),
                                np.repeat(np.sum(W_minus, axis=(0, 1)), model_def.no_states**2).reshape(-1, 1)))
+
+            # Standardize:
+            # if np.sum(np.abs(marginals[var_key])) == 0:
+            #     print("wef")
+            #
+            # marginals[var_key] = marginals[var_key] / np.sum(np.abs(marginals[var_key]))
 
         return {'reg_out': marginals, 'zeta_vec': zeta_vec}
 
