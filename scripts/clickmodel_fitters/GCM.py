@@ -208,7 +208,7 @@ class GCM:
         return pred
 
     @staticmethod
-    def _optimize_params(var_models, weight_dic, var_dic, verbose=False, epochs=250):
+    def _optimize_params(var_models, weight_dic, var_dic, verbose=2, epochs=250):
         # Procedure that finds the next parameters, based on the current E-step
         callback = EarlyStopping(monitor='loss', patience=5)
 
@@ -226,7 +226,7 @@ class GCM:
                     output_dim = int(weight_dic[var_name].shape[0]/X.shape[0]*2)
                     Y = weight_dic[var_name].T.reshape((X.shape[0], output_dim))
 
-                model.fit(X, Y, batch_size=min(Y.shape[0], 8192), epochs=epochs, verbose=True, callbacks=[callback])
+                model.fit(X, Y, batch_size=min(Y.shape[0], 8192), epochs=epochs, verbose=verbose, callbacks=[callback])
             var_models[var_name] = model
 
         return var_models

@@ -165,4 +165,4 @@ model_gamma.compile(loss=GCM.pos_log_loss, optimizer=RMSprop())
 
 var_models = {'phi_A': model_phi_A, 'gamma': model_gamma}
 
-res = GCM.runEM(click_mat, var_dic, var_models, item_pos_mat, model_def, verbose=True, n_jobs=1)
+res = GCM.runEM(click_mat, var_dic, var_models, item_pos_mat, model_def, verbose=True)
