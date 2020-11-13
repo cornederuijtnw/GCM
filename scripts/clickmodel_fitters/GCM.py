@@ -9,7 +9,6 @@ import multiprocessing as mp
 from scripts.verboseprinter import VerbosePrinter as VP
 
 
-
 class GCM:
     """
     Static class for fitting Generalized click model_definitions.
@@ -199,7 +198,7 @@ class GCM:
 
             pred[var_name] = model.predict(X, batch_size=X.shape[0]).flatten()
 
-            non_zero_pred = np.where(pred[var_name] > 0)
+            non_zero_pred = np.where(pred[var_name] != 0)
             pred[var_name][non_zero_pred] = np.clip(pred[var_name][non_zero_pred], 10**(-3), 1-10**(-3))
 
             # Replace possible NaN-values by 0s
@@ -208,7 +207,7 @@ class GCM:
         return pred
 
     @staticmethod
-    def _optimize_params(var_models, weight_dic, var_dic, verbose=2, epochs=250):
+    def _optimize_params(var_models, weight_dic, var_dic, verbose=0, epochs=250):
         # Procedure that finds the next parameters, based on the current E-step
         callback = EarlyStopping(monitor='loss', patience=5)
 
