@@ -300,28 +300,28 @@ class GCM:
         # at t=0:
         B = np.zeros((model_def.no_states, list_size + 1))
         A = np.zeros((model_def.no_states, list_size + 1))
-        L = np.zeros((model_def.no_states, list_size))  # No need for the +1
+        L = np.zeros((model_def.no_states, list_size + 1))
         H = np.zeros((model_def.no_states, model_def.no_states, list_size))
         zeta = np.zeros((model_def.no_states, list_size + 1))
 
         click_states = model_def.click_states
 
         B[:, list_size] = 1
-        # B[:, list_size] = click_vec[list_size - 1] * click_states[:, list_size] + (1 - click_vec[list_size - 1]) * (
-        #         1 - click_states[:, list_size])
+
         A[x_init_state, 0] = 1  #
         zeta[x_init_state, 0] = 1
         for t in range(1, list_size+1):
             # Note that the click vector itself does not have the 0 state, so the index is one behind
             zeta[:, t] = trans_matrices[t - 1] @  zeta[:, t - 1]
 
-            A[:, t] = click_vec[t-1] * click_states[:, t] * np.dot(trans_matrices[t - 1], A[:, t - 1].T) + \
-                      (1 - click_vec[t-1]) * (1 - click_states[:, t]) * np.dot(trans_matrices[t - 1], A[:, t - 1].T)
+            # should it be A transpose?
+            A[:, t] = click_vec[t-1] * click_states[:, t] * np.dot(trans_matrices[t - 1], A[:, t - 1]) + \
+                      (1 - click_vec[t-1]) * (1 - click_states[:, t]) * np.dot(trans_matrices[t - 1], A[:, t - 1])
         for t in reversed(range(1, list_size+1)):
-            L[:, t - 1] = click_vec[t - 1] * click_states[:, t] * B[:, t] + \
+            L[:, t] = click_vec[t - 1] * click_states[:, t] * B[:, t] + \
                       (1 - click_vec[t - 1]) * (1 - click_states[:, t]) * B[:, t]
-            B[:, t - 1] = np.dot(trans_matrices[t - 1].T, L[:, t-1].T)
-            H[:, :, t - 1] = np.outer(L[:, t - 1], A[:, t - 1]) / np.sum(A[:, list_size]) * trans_matrices[t - 1]
+            B[:, t - 1] = np.dot(trans_matrices[t].T, L[:, t])
+            H[:, :, t - 1] = np.outer(L[:, t], A[:, t - 1]) / np.sum(A[:, list_size]) * trans_matrices[t - 1]
 
             # Eq. 13.33 in Bishop: this would be conditioned on all data,
             # zeta[:, t] = B[:, t] * A[:, t] / np.sum(A[:, list_size])
@@ -368,8 +368,8 @@ class GCM:
                 raise ValueError("Probabilities in transition matrix at time: " + str(t) + ", session: " + str(i) +
                                  ", exceed one. Assertion error message: " + str(e))
 
-            for i in range(md.no_states):
-                trans_mat[md.absorbing_state[i]] = 1 - row_sums[i]
+            for j in range(md.no_states):
+                trans_mat[md.absorbing_state[j]] = 1 - row_sums[j]
 
             # The original I/O-HMM paper considers the transition matrix transpose, so from that paper this is
             # a bit easier perspective.
