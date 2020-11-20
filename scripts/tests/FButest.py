@@ -126,6 +126,7 @@ class MyTestCase(unittest.TestCase):
         list_size = 3
         no_states = (list_size + 1) * 4 + 1
 
+        np.random.seed(1992)
         A = np.triu(np.random.gamma(1, 1, (list_size + 1) ** 2).reshape(list_size + 1, list_size + 1)) / 10
 
         # Positive matrix for gamma:
@@ -144,10 +145,13 @@ class MyTestCase(unittest.TestCase):
                                np.zeros(no_states)))
 
         vars_dic = {'phi_A': np.array([0.5, 0.4, 0.3]),
-                    'phi_S': np.array([0.9, 0.85, 0.9]),
-                    'gamma': (gamma_pos + gamma_neg).flatten()}
+                    'gamma': np.tile((gamma_pos + gamma_neg).flatten(), 3)}
 
-        GCM._get_trans_mat(self._model_def_ubm, vars_dic, item_order, i=0)
+        trans_matrices = GCM._get_trans_mat(self._model_def_ubm, vars_dic, item_order, i=0)
+
+        with open("ubm_trans.pl", "rb") as f:
+            trans_matrices_expected = pl.load(f)
+        np.testing.assert_allclose(trans_matrices, trans_matrices_expected)
 
     def test_FBeq(self):
         item_order = np.array([0, 1, 2])
