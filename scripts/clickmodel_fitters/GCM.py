@@ -300,7 +300,9 @@ class GCM:
         # at t=0:
         B = np.zeros((model_def.no_states, list_size + 1))
         A = np.zeros((model_def.no_states, list_size + 1))
-        L = np.zeros((model_def.no_states, list_size + 1))
+
+        # Just like the transition matrix, L is only on the transitions, so if the paper says t, we take t-1
+        L = np.zeros((model_def.no_states, list_size))
         H = np.zeros((model_def.no_states, model_def.no_states, list_size))
         zeta = np.zeros((model_def.no_states, list_size + 1))
 
@@ -318,10 +320,11 @@ class GCM:
             A[:, t] = click_vec[t-1] * click_states[:, t] * np.dot(trans_matrices[t - 1], A[:, t - 1]) + \
                       (1 - click_vec[t-1]) * (1 - click_states[:, t]) * np.dot(trans_matrices[t - 1], A[:, t - 1])
         for t in reversed(range(1, list_size+1)):
-            L[:, t] = click_vec[t - 1] * click_states[:, t] * B[:, t] + \
+            # Just like the transition matrix, L is only on the transitions, so if the paper says t, we take t-1!
+            L[:, t-1] = click_vec[t - 1] * click_states[:, t] * B[:, t] + \
                       (1 - click_vec[t - 1]) * (1 - click_states[:, t]) * B[:, t]
-            B[:, t - 1] = np.dot(trans_matrices[t].T, L[:, t])
-            H[:, :, t - 1] = np.outer(L[:, t], A[:, t - 1]) / np.sum(A[:, list_size]) * trans_matrices[t - 1]
+            B[:, t - 1] = np.dot(trans_matrices[t-1].T, L[:, t-1])
+            H[:, :, t - 1] = np.outer(L[:, t-1], A[:, t - 1]) / np.sum(A[:, list_size]) * trans_matrices[t - 1]
 
             # Eq. 13.33 in Bishop: this would be conditioned on all data,
             # zeta[:, t] = B[:, t] * A[:, t] / np.sum(A[:, list_size])
@@ -332,6 +335,7 @@ class GCM:
     def _get_trans_mat(md, vars_dic, item_order, i):
         # Initialize the M matrices:
         trans_matrices = []
+        trans_prob_corr = dict(zip(list(vars_dic.keys()), np.zeros(len(vars_dic), dtype='int').tolist()))
 
         # Just to ensure it is a transition matrix, only the click state (= initial state) is omitted
         for t in range(md.list_size):
@@ -339,15 +343,17 @@ class GCM:
             for var_name, act_mat in md.act_matrices.items():
                 if var_name in md.t0_fixed and t == 0:
                     cur_param = md.t0_fixed[var_name]
+                    trans_prob_corr[var_name] = 1
                 elif md.var_type[var_name] == 'item':
-                    cur_param = vars_dic[var_name][item_order[t]]
+                    cur_param = vars_dic[var_name][item_order[t - trans_prob_corr[var_name]]]
                 elif md.var_type[var_name] == 'session':
                     cur_param = vars_dic[var_name][i]
                 elif md.var_type[var_name] == 'state':
                     cur_param = vars_dic[var_name].reshape((md.no_states, md.no_states)).T
                 elif md.var_type[var_name] == "pos":
                     size_statespace = md.no_states ** 2
-                    cur_param = vars_dic[var_name][size_statespace * t: size_statespace * (t+1)]\
+                    cur_param = vars_dic[var_name][size_statespace * (t - trans_prob_corr[var_name]):
+                                                   size_statespace * ((t - trans_prob_corr[var_name])+1)]\
                         .reshape((md.no_states, md.no_states))
                 else:
                     raise KeyError("Parameter type " + str(md.var_type[var_name]) +
